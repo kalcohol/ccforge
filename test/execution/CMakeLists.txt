@@ -497,7 +497,7 @@ foreach(_target IN ITEMS test_execution_removed_forms test_execution_standard_fo
     set_tests_properties(${_test} PROPERTIES
         DEPENDS ${_test}_compile TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endforeach()
-foreach(_case RANGE 1 33)
+foreach(_case RANGE 1 35)
     set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs}
         -DFORGE_REMOVED_NAME=${_case} -DFORGE_REMOVAL_CONTROL=1)
     forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_REMOVED_NAME_CONTROL_${_case}

@@ -37,23 +37,6 @@ template<std::execution::scheduler Scheduler, class... Vs>
         std::execution::just(std::forward<Vs>(vs)...), std::move(sch));
 }
 
-#if defined(FORGE_EXECUTION_BACKPORT_ACTIVE)
-// Diagnostic snapshots are available only for the backport scope types.
-template<class Scope>
-    requires (std::same_as<Scope, std::execution::simple_counting_scope> ||
-              std::same_as<Scope, std::execution::counting_scope>)
-[[nodiscard]] std::size_t scope_count(const Scope& scope) noexcept {
-    return scope.__count();
-}
-template<class Scope>
-    requires (std::same_as<Scope, std::execution::simple_counting_scope> ||
-              std::same_as<Scope, std::execution::counting_scope>)
-[[nodiscard]] bool scope_is_closed(const Scope& scope) noexcept {
-    return scope.__is_closed();
-}
-
-#endif
-
 using std::this_thread::sync_wait;
 
 } // namespace forge

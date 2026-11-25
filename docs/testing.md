@@ -504,10 +504,25 @@ operation，由 receiver 记录相应 completion channel。
 形式，同一源文件包含标准正控制。`execution_removed_forms` 运行两阶段 domain
 transform 的选择回归。`execution_standard_forms_compile` 构建标准调用示例，
 `execution_standard_forms` 运行这些调用。
-配置阶段逐个验证 33 个已移除的名称或调用形式均无法编译，每项配有标准拼写或
-Forge 迁移入口的正控制，要求编译并链接可执行文件。共享的配置期反例使用静态库目标，
-以编译错误判定拒绝。MSVC、GCC 和 Clang 系工具链在这些反例中禁用警告，同组选项下
-只有警告的控制代码必须能够编译。
+配置阶段通过 [移除探针](../test/execution/compile/test_execution_reject_removed_names.cpp)
+逐个验证 35 个已移除的名称或调用形式均无法编译。未显式限定的名称按
+`std::execution` 中的旧拼写检查，scope 成员按所属类型检查。
+
+| 编号 | 检查移除的名称或调用形式 |
+| --- | --- |
+| 1–7 | `empty_env`、`make_prop`、`transfer_just`、`env_domain_t`、`receiver_domain_t`、`sender_domain_t`、`read_env_t` |
+| 8–12 | `value_types_of`、`error_types_of`、`sends_stopped_v`、`receiver_of` 的旧调用形式、`sync_wait_with_variant` |
+| 13–19 | `forwarding_query`、`forwarding_query_t`、`get_stop_token`、`get_stop_token_t`、`get_allocator`、`get_allocator_t`、`stop_token_of_t` 的旧命名空间拼写 |
+| 20–29 | `receiver_t`、`sender_t`、`operation_state_t`、`scheduler_t`、`make_env`、`queryable`、`sender_to`、`std::stoppable_token_for`、`split`、`sync_wait` |
+| 30–33 | `simple_counting_scope` 与 `counting_scope` 各自的 `count()` 和 `is_closed()` |
+| 34–35 | `forge::scope_count` 与 `forge::scope_is_closed`，分别检查 |
+
+每项正向对照都必须编译并链接为可执行文件。前 29 项使用有效的标准形式或保留的
+Forge 接口作对照，第 30–33 项检查对应 scope 的标准 `close()` 和 `join()`。
+第 34 和 35 项的对照包含仍可用的 `<forge/execution_extensions.hpp>` 并验证
+`forge::transfer_just`，以确认头文件和保留的接口仍可用。该函数不是快照观察接口的迁移目标。
+配置期反例使用静态库目标，以编译错误判定拒绝。MSVC、GCC 和 Clang 系工具链在这些反例中
+禁用警告，同组选项下只有警告的控制代码必须能够编译。
 配置 MSVC 测试探针时，请勿在 `CL` 或 `_CL_` 环境变量中设置 `/WX`，因为 MSVC 会将
 `CL` 的选项加在命令行选项之前，将 `_CL_` 的选项加在命令行选项之后。
 `execution_forge_bulk` 覆盖 Forge 三种串行算法的 direct 与 pipe 调用、索引顺序、
@@ -723,9 +738,8 @@ Python 不变时 full 会重现相同结果，因此 C++ 单独变化的真正�
 ### Linalg 完整重载回归
 
 `FORGE_TEST_ENABLE_LINALG=ON` 且基础 `<mdspan>` 可用并定义 `__cpp_lib_mdspan` 时，`linalg_feature_macro_compile`
-检查注入时的特性宏。Backport 注入时注册 `linalg_forge_extensions`，覆盖整数范数、
-有符号整数 Givens、无符号系数的拒绝诊断、整数与浮点元素和初值组合下的 SSQ，以及访问代理的
-`abs` 定制。
+检查注入时的特性宏。Backport 注入时，`linalg_level1` 检查标准范数与 Givens 旋转，
+包括复数与访问代理。
 非 MSVC 模式下，基础 `<mdspan>` 可用且 native handoff 测试组启用时，
 `native_handoff_probe_surface_linalg_empty_namespace` 通过正式配置探测验证空 `std::linalg`
 命名空间且无特性宏时会注入 backport。
@@ -733,8 +747,9 @@ Python 不变时 full 会重现相同结果，因此 C++ 单独变化的真正�
 通过 `#include_next` 加载只定义旧特性宏的测试头，再验证强制注入后的特性宏。MSVC 模式由
 配置时解析的 `FORGE_MSVC_LINALG_HEADER` 选择原生头，因此该测试夹具只注册在 `#include_next` 路径上。
 `linalg_include_compile` 与 `linalg_overload_scalars` 在 backport 注入或 complete native 时注册。
-前者在注入时检查 Forge 范数和旋转的显式模板调用，在完整原生实现中检查可用的策略转发。
-后者用全部 78 个非 policy twin 的独立小整数期望验证标准入口。
+前者检查代表性的标准范数、Givens 和可用的 policy 调用，后者用全部 78 个非 policy twin
+的独立小整数期望验证标准入口。Forge 头文件的可用性及迁移见
+[linalg 迁移表](backports/linalg.md#已移除的非草案形式)。
 
 其余依赖 backport 约束诊断、marker 或特定算术路径的测试及 configure probes，均要求
 实际 backport 注入：`FORGE_FORCE_LINALG_BACKPORT`，或 `FORGE_LINALG_FULL` 与

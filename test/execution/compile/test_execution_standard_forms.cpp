@@ -61,15 +61,32 @@ struct domain_receiver {
     }
 };
 
-template<class Scope>
-bool scope_observers(Scope& scope) {
-    static_assert(noexcept(forge::scope_count(scope)));
-    static_assert(noexcept(forge::scope_is_closed(scope)));
-    if (forge::scope_count(scope) != 0 || forge::scope_is_closed(scope)) {
-        return false;
+struct scope_join_receiver {
+    using receiver_concept = ex::receiver_tag;
+    bool* completed;
+
+    void set_value() && noexcept { *completed = true; }
+
+    auto get_env() const noexcept {
+        return ex::env{ex::prop{ex::get_start_scheduler, ex::inline_scheduler{}}};
     }
+};
+
+template<class Scope>
+bool scope_closes_and_joins() {
+    Scope scope;
+    auto token = scope.get_token();
+    auto association = token.try_associate();
+    const bool acquired = static_cast<bool>(association);
     scope.close();
-    return forge::scope_count(scope) == 0 && forge::scope_is_closed(scope);
+    const bool rejected = !token.try_associate();
+
+    bool completed = false;
+    auto op = ex::connect(scope.join(), scope_join_receiver{&completed});
+    ex::start(op);
+    const bool pending = !completed;
+    association = {};
+    return acquired && rejected && pending && completed;
 }
 
 int main() {
@@ -142,12 +159,12 @@ int main() {
     const auto without_stop = forge::sync_wait(ex::write_env(
         ex::unstoppable(read_stop_in_successor()) | stop_flags, stop_env));
 
-    ex::simple_counting_scope simple_scope;
-    ex::counting_scope counting_scope;
+    const bool simple_scope_ok = scope_closes_and_joins<ex::simple_counting_scope>();
+    const bool counting_scope_ok = scope_closes_and_joins<ex::counting_scope>();
     const auto value = std::this_thread::sync_wait(ex::just(42));
     const auto variant_value = std::this_thread::sync_wait_with_variant(ex::just(42));
 
-    return scope_observers(simple_scope) && scope_observers(counting_scope) &&
+    return simple_scope_ok && counting_scope_ok &&
            value == std::optional{std::tuple{42}} &&
            variant_value && std::get<0>(std::get<0>(*variant_value)) == 42 &&
            with_stop == std::optional{std::make_tuple(std::pair{true, true})} &&

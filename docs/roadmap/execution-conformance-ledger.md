@@ -329,7 +329,7 @@ stdexec 属于可选参考实现探测，不代表 native handoff 完成。流�
 
 这是 2026-08-23 快照，之后的提交未复审；下一次工作草案快照审计时需重新核对整个台账，需负责人另行决定。
 
-两种 counting scope 的诊断快照由 `forge::scope_count` 与 `forge::scope_is_closed` 提供（仅 backport）。`spawn_future` 的 allocator 只覆盖 shared state 和 consumer record，不覆盖溢出子 op 或 callback 控制块。
+`spawn_future` 的 allocator 只覆盖 shared state 和 consumer record，不覆盖溢出子 op 或 callback 控制块。
 
 ## 已移除的 execution 扩展
 
@@ -341,7 +341,7 @@ stdexec 属于可选参考实现探测，不代表 native handoff 完成。流�
 [执行库迁移表](../backports/execution.md#已移除扩展与迁移)。
 `get_completion_signatures_t` 等现有 CPO 类型名另随接口形状调整。
 
-计数 scope 的观察入口是诊断快照，不提供跨字段一致性或额外同步保证。内部 observer 仅用于实现与白盒测试，不属于公共 API。Forge 观察入口只接受 backport 的两种 scope 类型，原生让位时不提供。依据为 [counting scopes](https://eel.is/c++draft/exec.counting.scopes) 的成员列表及 [sync_wait](https://eel.is/c++draft/exec.sync.wait) 的恰好一种 value completion 要求。
+2026-11-25 的 P0-1 移除了 `forge::scope_count` 与 `forge::scope_is_closed`。两种 counting scope 都使用 `close()` 与 `join()` 协调，应用若需要诊断快照则由调用方维护计数和关闭状态。内部 observer 仅用于实现与白盒测试，不属于公共 API。标准接口见 [counting scopes](https://eel.is/c++draft/exec.counting.scopes)。`sync_wait` 的恰好一种 value completion 要求见 [sync_wait](https://eel.is/c++draft/exec.sync.wait)。
 
 ## Linalg 与 mdspan 的草案对齐
 
@@ -349,7 +349,7 @@ stdexec 属于可选参考实现探测，不代表 native handoff 完成。流�
 | --- | --- |
 | `std::linalg` 调用形式 | 移除旧 Triangle 顺序、额外的 rank-2 / rank-2k alpha 调用及历史 SSQ。逐项迁移见 [linalg 说明](../backports/linalg.md#已移除的非草案形式)。 |
 | Norm 与 Givens 类型约束 | 两范数检查元素与 `Scalar` 的浮点或复数类型，Givens 检查浮点 `Real`；policy twin 使用相同约束。整数 `matrix_one_norm`、`matrix_inf_norm` 与 `vector_abs_sum` 保留饱和行为。 |
-| Forge 扩展 | backport 注入时提供整数范数、有符号整数 Givens 及 SSQ。原生 `<linalg>` 定义特性宏时，范数和 Givens 包装器转发到原生重载。迁移入口见 [Forge 线性代数扩展](../forge-utilities.md#线性代数扩展)。 |
+| Forge 扩展（`93b97c3` 快照，2026-11-25） | 在该快照中，backport 注入时提供整数范数、有符号整数 Givens 及 SSQ；原生 `<linalg>` 定义 `__cpp_lib_linalg` 时提供范数和 Givens 转发包装器。当前可用性与迁移方式见 [linalg 迁移表](../backports/linalg.md#已移除的非草案形式)。 |
 | Policy 重载 | 原生 policy 对象可用时提供 78 个重载。调用线程内顺序运行，元素访问异常触发 terminate；`<linalg>` 使用原生检测。 |
 | Mapping 与宏 | `layout_transpose::mapping` 从精确 nested mapping 显式构造；submdspan 测试通过 ADL 调用 mapping customization。注入的 `<linalg>` 定义 `__cpp_lib_linalg = 202511L`，原生探测先于注入。 |
 

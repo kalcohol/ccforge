@@ -519,7 +519,7 @@ decayed 结果构造及自定义 stop-token callbacks，这些路径除上述 al
 没有额外全局分配；inplace registration 不分配。上述用户代码自行分配的内存另计。使用缺省
 allocator 时，`spawn` / `spawn_future` 的上述共享或 detached 存储仍会分配。
 只有 `schedule_from` 提供结构化访问；其他库 sender 的 `tag_of_t` 无法成立，自定义 domain 不能按工作草案方式匹配它们。
-`forge::scope_count` 和 `forge::scope_is_closed` 提供两种 backport scope 的诊断快照。
+两种 counting scope 均无公共诊断快照接口。使用 `close()` 拒绝新的关联，使用 `join()` 等待已有关联全部释放。
 
 
 ### 查询、scheduler 与类型工具
@@ -624,7 +624,7 @@ P3682 将 `split` 从工作草案移除；该接口现由 Forge 头文件提供�
 | `co_await s`，依赖 sender bridge 隐式复制左值 | 可消费时用 `co_await std::move(s)`。需保留原对象时，先写 `auto copy = s` 再用 `co_await std::move(copy)`。若 completion adaptor 返回左值，将其改为返回可连接的右值 |
 | `as_awaitable(s, p)` 依赖可同时调用的 member 与 ADL `operator co_await` 优先选中 member 分支 | 为该值类别只提供一个可调用的 `operator co_await`，或明确调用所需的成员，例如 `co_await std::move(s).operator co_await()` |
 | `std::execution::split(s)` | 包含 `<forge/split.hpp>` 后调用 `forge::split(s)` |
-| 两种 counting scope 的 `scope.count()` / `scope.is_closed()` | `<forge/execution_extensions.hpp>` 的 `forge::scope_count(scope)` / `forge::scope_is_closed(scope)`（仅 backport） |
+| 两种 counting scope 的 `scope.count()` / `scope.is_closed()`，以及已移除的 `forge::scope_count(scope)` / `forge::scope_is_closed(scope)` | 协调工作时用 `scope.close()` 拒绝新的关联，再用 `std::this_thread::sync_wait(scope.join())` 等待已有关联释放。若应用需要快照，由调用方维护计数和关闭状态，并在并发访问时自行同步。 |
 | `std::execution::receiver_t`、`sender_t`、`operation_state_t`、`scheduler_t` | 使用 `std::execution::receiver_tag`、`sender_tag`、`operation_state_tag`、`scheduler_tag` |
 | `std::execution::forwarding_query`、`get_stop_token`、`get_allocator` 及各自的 `_t` 类型、`stop_token_of_t` | 使用 `std::forwarding_query`、`std::get_stop_token`、`std::get_allocator`、`std::forwarding_query_t`、`std::get_stop_token_t`、`std::get_allocator_t`、`std::stop_token_of_t` |
 | `std::execution::make_env(envs...)` | `std::execution::env{envs...}`；需要保留转发的值类别时显式传入相应的左值或右值引用表达式 |
@@ -687,7 +687,7 @@ policy 对象同时可用时，Forge 入口调用相应标准算法并传入 `st
 无法形成 `sync_wait_with_variant` 所需的结果类型，调用违反其结果类型的 Mandate。
 
 `forge::empty_env` 在两种模式下均为 `std::execution::env<>`。
-Scope 观察函数只提供诊断快照。`get_completion_signatures_t` 等 CPO 类型名另随接口形状迁移。
+`get_completion_signatures_t` 等 CPO 类型名另随接口形状迁移。
 
 ### when_all 的 WD 存储环境
 
