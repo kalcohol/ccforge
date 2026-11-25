@@ -11,11 +11,46 @@
 #include <optional>
 #include <thread>
 #include <type_traits>
+#include <utility>
 #include <variant>
 #include <tuple>
 #include <stdexcept>
 
 namespace {
+
+struct synchronous_destroy_receiver {
+    using receiver_concept = std::execution::receiver_tag;
+
+    void* owner;
+    void (*destroy)(void*) noexcept;
+    std::thread::id* completed_on;
+
+    void set_value() && noexcept {
+        *completed_on = std::this_thread::get_id();
+        destroy(owner);
+    }
+
+    template<class E>
+    void set_error(E&&) && noexcept { ADD_FAILURE() << "unexpected error"; }
+    void set_stopped() && noexcept { ADD_FAILURE() << "unexpected stop"; }
+};
+
+template<class Sender>
+void expect_synchronous_receiver_owned_destruction(Sender&& sender) {
+    using op_t = std::execution::connect_result_t<Sender, synchronous_destroy_receiver>;
+    std::thread::id completed_on;
+    std::unique_ptr<op_t> owner;
+    owner.reset(new op_t(std::execution::connect(
+        std::forward<Sender>(sender),
+        synchronous_destroy_receiver{
+            &owner,
+            [](void* ptr) noexcept { static_cast<std::unique_ptr<op_t>*>(ptr)->reset(); },
+            &completed_on})));
+    // The receiver deletes the operation before start returns.
+    std::execution::start(*owner);
+    EXPECT_EQ(completed_on, std::this_thread::get_id());
+    EXPECT_EQ(owner, nullptr);
+}
 
 struct throwing_move_value {
     throwing_move_value() = default;
@@ -664,10 +699,29 @@ TEST(StartDetachedTest, HandlesSynchronousWhenAllCompletion) {
     EXPECT_EQ(counter.load(), 1);
 }
 
+TEST(SynchronousReceiverDestructionTest, WhenAll) {
+    std::atomic<int> counter{0};
+    expect_synchronous_receiver_owned_destruction(
+        std::execution::when_all(std::execution::just(), std::execution::just())
+        | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); }));
+    EXPECT_EQ(counter.load(), 1);
+}
+
 TEST(StartDetachedTest, HandlesSynchronousStartsOnCompletion) {
     std::atomic<int> counter{0};
     std::execution::inline_scheduler sch;
     forge::start_detached(
+        std::execution::starts_on(
+            sch,
+            std::execution::just()
+            | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); })));
+    EXPECT_EQ(counter.load(), 1);
+}
+
+TEST(SynchronousReceiverDestructionTest, StartsOn) {
+    std::atomic<int> counter{0};
+    std::execution::inline_scheduler sch;
+    expect_synchronous_receiver_owned_destruction(
         std::execution::starts_on(
             sch,
             std::execution::just()
@@ -762,6 +816,17 @@ TEST(StartDetachedTest, HandlesSynchronousContinuesOnCompletion) {
     std::atomic<int> counter{0};
     std::execution::inline_scheduler sch;
     forge::start_detached(
+        std::execution::continues_on(
+            std::execution::just()
+            | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); }),
+            sch));
+    EXPECT_EQ(counter.load(), 1);
+}
+
+TEST(SynchronousReceiverDestructionTest, ContinuesOn) {
+    std::atomic<int> counter{0};
+    std::execution::inline_scheduler sch;
+    expect_synchronous_receiver_owned_destruction(
         std::execution::continues_on(
             std::execution::just()
             | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); }),

@@ -1,10 +1,14 @@
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include "test_execution_completion.hpp"
+#include "test_thread_pool.hpp"
 #include <execution>
 #include <forge/static_thread_pool.hpp>
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <latch>
 #include <memory>
 #include <string>
 #include <thread>
@@ -296,14 +300,22 @@ TEST(SplitTest, OversizedInnerOperationUsesHeapFallback) {
 }
 
 TEST(StaticThreadPoolStressTest, WhenAllSplitAndContinuesOnCompleteConcurrently) {
-    forge::static_thread_pool pool(4);
-    auto scheduler = pool.get_scheduler();
+    test_execution::test_thread_pool standard_pool{4};
+    auto scheduler = standard_pool.get_scheduler();
+    // Keep the Forge pool for the split integration until P0-5.
+    forge::static_thread_pool split_pool{4};
+    auto split_scheduler = split_pool.get_scheduler();
 
     for (int i = 0; i < 64; ++i) {
         std::atomic<int> when_all_ran{0};
+        std::array<std::thread::id, 4> when_all_workers{};
+        std::latch children_running{4};
         auto child = [&](int value) {
             return std::execution::schedule(scheduler)
                 | std::execution::then([&, value] {
+                      when_all_workers[value - 1] = std::this_thread::get_id();
+                      // No worker can finish its child before all four enter.
+                      children_running.arrive_and_wait();
                       when_all_ran.fetch_add(1, std::memory_order_relaxed);
                       return value;
                   });
@@ -315,21 +327,29 @@ TEST(StaticThreadPoolStressTest, WhenAllSplitAndContinuesOnCompleteConcurrently)
         EXPECT_EQ(std::get<0>(*joined) + std::get<1>(*joined)
                     + std::get<2>(*joined) + std::get<3>(*joined), 10);
         EXPECT_EQ(when_all_ran.load(std::memory_order_relaxed), 4);
+        for (const auto worker : when_all_workers) {
+            EXPECT_NE(worker, std::thread::id{});
+            EXPECT_NE(worker, std::this_thread::get_id());
+        }
 
         std::atomic<int> continued{0};
+        std::thread::id continued_on;
         auto continued_result = std::this_thread::sync_wait(
             std::execution::continues_on(std::execution::just(5), scheduler)
                 | std::execution::then([&](int x) {
+                      continued_on = std::this_thread::get_id();
                       continued.fetch_add(1, std::memory_order_relaxed);
                       return x + 1;
                   }));
         ASSERT_TRUE(continued_result.has_value());
         EXPECT_EQ(std::get<0>(*continued_result), 6);
         EXPECT_EQ(continued.load(std::memory_order_relaxed), 1);
+        EXPECT_TRUE(std::find(when_all_workers.begin(), when_all_workers.end(), continued_on)
+                    != when_all_workers.end());
 
         std::atomic<int> producer_runs{0};
         auto shared = forge::split(
-            std::execution::schedule(scheduler)
+            std::execution::schedule(split_scheduler)
                 | std::execution::then([&] {
                       producer_runs.fetch_add(1, std::memory_order_relaxed);
                       return 42;

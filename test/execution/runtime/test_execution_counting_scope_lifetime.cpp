@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
 
+#include "test_thread_pool.hpp"
+
 #include <execution>
-#include <forge/static_thread_pool.hpp>
 
 #include <cstdlib>
 #include <exception>
@@ -14,7 +15,7 @@ namespace {
 template<class Scope>
 void expect_cross_thread_join_then_destroy() {
     static_assert(std::is_nothrow_destructible_v<Scope>);
-    forge::static_thread_pool pool{1};
+    test_execution::test_thread_pool pool{1};
     const auto owner = std::this_thread::get_id();
     for (int iteration = 0; iteration < 1024; ++iteration) {
         SCOPED_TRACE(iteration);
@@ -41,7 +42,7 @@ void expect_cross_thread_join_then_destroy() {
             EXPECT_NE(worker, owner);
         } // Destroy immediately after join, before waiting for the worker pool.
     }
-    pool.wait();
+    pool.join();
 }
 
 template<class Scope>

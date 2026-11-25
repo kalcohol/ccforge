@@ -1,13 +1,13 @@
 #include <gtest/gtest.h>
 #include "test_execution_completion.hpp"
 #include <execution>
-#include <forge/start_detached.hpp>
-#include <forge/static_thread_pool.hpp>
 #include "../../forge/runtime/forge_operation_destroy.hpp"
 #include "test_execution_manual_sender.hpp"
+#include "test_thread_pool.hpp"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <latch>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -25,6 +25,7 @@ using forge_execution_test::manual_sender;
 using forge_execution_test::wait_until_completed;
 using forge_execution_test::wait_until_started;
 using forge_execution_test::wait_until_stop_requested;
+using test_execution::test_thread_pool;
 using namespace std::chrono_literals;
 
 template<class Sig, class CS>
@@ -232,7 +233,7 @@ void expect_multiple_joiners_complete_when_scope_drains() {
 
 template<class Scope>
 void expect_delayed_join_uses_start_scheduler() {
-    forge::static_thread_pool pool{1};
+    test_thread_pool pool{1};
     auto scheduler = pool.get_scheduler();
 
     Scope scope;
@@ -256,21 +257,31 @@ void expect_delayed_join_uses_start_scheduler() {
             &completion_thread,
             &completed});
 
-    std::execution::start(op);
+    std::thread::id start_thread;
+    auto started = std::this_thread::sync_wait(
+        std::execution::schedule(scheduler)
+        | std::execution::then([&] noexcept {
+            start_thread = std::this_thread::get_id();
+            std::execution::start(op);
+        }));
+    // The owner still holds the association when the worker returns from start.
+    EXPECT_TRUE(started.has_value());
     EXPECT_FALSE(completed.load(std::memory_order_acquire));
 
     const auto release_thread = std::this_thread::get_id();
     assoc = decltype(assoc){};
 
-    ASSERT_TRUE(wait_for_flag(completed));
+    pool.join();
+    EXPECT_TRUE(completed.load(std::memory_order_acquire));
+    EXPECT_NE(completion_thread, std::thread::id{});
     EXPECT_NE(completion_thread, release_thread);
+    EXPECT_EQ(completion_thread, start_thread);
     EXPECT_EQ(scope.__count(), 0u);
-    pool.wait();
 }
 
 template<class Scope>
 void expect_empty_join_completes_inline() {
-    forge::static_thread_pool pool{1};
+    test_thread_pool pool{1};
     auto scheduler = pool.get_scheduler();
 
     Scope scope;
@@ -283,12 +294,22 @@ void expect_empty_join_completes_inline() {
             &completion_thread,
             &completed});
 
-    const auto start_thread = std::this_thread::get_id();
-    std::execution::start(op);
+    std::thread::id start_thread;
+    bool completed_inline = false;
+    auto started = std::this_thread::sync_wait(
+        std::execution::schedule(scheduler)
+        | std::execution::then([&] noexcept {
+            start_thread = std::this_thread::get_id();
+            std::execution::start(op);
+            // The sole worker cannot dequeue another operation during this check.
+            completed_inline = completed.load(std::memory_order_acquire)
+                && completion_thread == start_thread;
+        }));
 
-    EXPECT_TRUE(completed.load(std::memory_order_acquire));
-    EXPECT_EQ(completion_thread, start_thread);
-    pool.wait();
+    pool.join();
+    EXPECT_TRUE(started.has_value());
+    EXPECT_TRUE(completed_inline);
+    EXPECT_NE(start_thread, std::this_thread::get_id());
 }
 
 template<class Scope>
@@ -709,19 +730,20 @@ TEST(SimpleCountingScopeTest, JoinReceiverMayDestroyOperationOnCompletion) {
 }
 
 TEST(SimpleCountingScopeTest, JoinDoesNotDeadlockSingleThreadScheduler) {
-    forge::static_thread_pool pool{1};
+    test_thread_pool pool{1};
     auto scheduler = pool.get_scheduler();
 
     std::execution::simple_counting_scope scope;
-    auto token = scope.get_token();
-    using association_t = decltype(token.try_associate());
-    auto assoc = std::make_shared<std::optional<association_t>>(token.try_associate());
-    ASSERT_TRUE(assoc->has_value());
+    auto assoc = scope.get_token().try_associate();
+    ASSERT_TRUE(static_cast<bool>(assoc));
 
-    std::atomic<bool> join_start_returned{false};
-    std::atomic<bool> release_ran{false};
+    bool join_was_pending = false;
+    bool starter_completed = false;
+    bool releaser_completed = false;
     std::atomic<bool> join_completed{false};
+    std::thread::id worker_thread;
     std::thread::id completion_thread;
+    std::latch release_done{1};
     auto join_op = std::execution::connect(
         scope.join(),
         scheduled_join_receiver<decltype(scheduler)>{
@@ -729,28 +751,36 @@ TEST(SimpleCountingScopeTest, JoinDoesNotDeadlockSingleThreadScheduler) {
             &completion_thread,
             &join_completed});
 
-    forge::start_detached(
+    auto starter = std::execution::connect(
         std::execution::schedule(scheduler)
         | std::execution::then([&] noexcept {
+            worker_thread = std::this_thread::get_id();
             std::execution::start(join_op);
-            join_start_returned.store(true, std::memory_order_release);
-        }));
-
-    ASSERT_TRUE(wait_for_flag(join_start_returned));
-    EXPECT_FALSE(join_completed.load(std::memory_order_acquire));
-
-    forge::start_detached(
+            join_was_pending = !join_completed.load(std::memory_order_acquire);
+        }),
+        scope_probe_receiver{&starter_completed});
+    auto releaser = std::execution::connect(
         std::execution::schedule(scheduler)
-        | std::execution::then([&, assoc] noexcept {
-            assoc->reset();
-            release_ran.store(true, std::memory_order_release);
-        }));
+        | std::execution::then([&] noexcept {
+            assoc = decltype(assoc){};
+            release_done.count_down();
+        }),
+        scope_probe_receiver{&releaser_completed});
 
-    EXPECT_TRUE(wait_for_flag(release_ran));
-    EXPECT_TRUE(wait_for_flag(join_completed));
+    // FIFO on the only worker makes releasing the association depend on
+    // start(join_op) returning. Keep admission open until release queues join.
+    std::execution::start(starter);
+    std::execution::start(releaser);
+    release_done.wait();
+    pool.join();
+
+    EXPECT_TRUE(starter_completed);
+    EXPECT_TRUE(join_was_pending);
+    EXPECT_TRUE(releaser_completed);
+    EXPECT_TRUE(join_completed.load(std::memory_order_acquire));
+    EXPECT_NE(worker_thread, std::this_thread::get_id());
+    EXPECT_EQ(completion_thread, worker_thread);
     EXPECT_EQ(scope.__count(), 0u);
-
-    pool.wait();
 }
 
 TEST(SimpleCountingScopeTest, AssociationMoveTransfersOwnership) {
