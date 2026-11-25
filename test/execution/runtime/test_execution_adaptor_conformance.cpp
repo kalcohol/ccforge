@@ -1,5 +1,4 @@
 #include "test_bulk.hpp"
-#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include <execution>
 
@@ -86,7 +85,6 @@ TEST(ExecutionAdaptorConformance, LockedPredecessorsCanBeReplacedDuringCompletio
         EXPECT_EQ(std::get<0>(*value), 42);
     };
     check(ex::when_all(ex::just(1), ex::just(2)));
-    check(forge::split(ex::just(1)));
     ex::simple_counting_scope scope;
     check(ex::spawn_future(ex::just(1), scope.get_token()));
     auto joined = std::this_thread::sync_wait(scope.join());

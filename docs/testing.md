@@ -509,8 +509,9 @@ operation，由 receiver 记录相应 completion channel。
 形式，同一源文件包含标准正控制。`execution_removed_forms` 运行两阶段 domain
 transform 的选择回归。`execution_standard_forms_compile` 构建标准调用示例，
 `execution_standard_forms` 运行这些调用。
-配置阶段通过 [移除探针](../test/execution/compile/test_execution_reject_removed_names.cpp)
-逐个验证 35 个已移除的名称或调用形式均无法编译。未显式限定的名称按
+配置阶段通过 [标准移除探针](../test/execution/compile/test_execution_reject_removed_names.cpp)
+和 [Forge 移除探针](../test/forge/compile/test_forge_reject_removed_observers.cpp)
+分别检查第 1–33 项和第 34–35 项。未显式限定的名称按
 `std::execution` 中的旧拼写检查，scope 成员按所属类型检查。
 
 | 编号 | 检查移除的名称或调用形式 |
@@ -522,15 +523,14 @@ transform 的选择回归。`execution_standard_forms_compile` 构建标准调�
 | 30–33 | `simple_counting_scope` 与 `counting_scope` 各自的 `count()` 和 `is_closed()` |
 | 34–35 | `forge::scope_count` 与 `forge::scope_is_closed`，分别检查 |
 
-每项正向对照都必须编译并链接为可执行文件。前 29 项使用有效的标准形式或保留的
-Forge 接口作对照，第 30–33 项检查对应 scope 的标准 `close()` 和 `join()`。
+每项正向对照都必须编译并链接为可执行文件。前 29 项使用有效的标准形式作对照，第 30–33 项检查对应 scope 的标准 `close()` 和 `join()`。
 第 34 和 35 项的对照包含仍可用的 `<forge/execution_extensions.hpp>` 并验证
 `forge::transfer_just`，以确认头文件和保留的接口仍可用。该函数不是快照观察接口的迁移目标。
 配置期反例使用静态库目标，以编译错误判定拒绝。MSVC、GCC 和 Clang 系工具链在这些反例中
 禁用警告，同组选项下只有警告的控制代码必须能够编译。
 配置 MSVC 测试探针时，请勿在 `CL` 或 `_CL_` 环境变量中设置 `/WX`，因为 MSVC 会将
 `CL` 的选项加在命令行选项之前，将 `_CL_` 的选项加在命令行选项之后。
-`execution_forge_bulk` 覆盖 Forge 三种串行算法的 direct 与 pipe 调用、索引顺序、
+`forge_serial_bulk` 覆盖 Forge 三种串行算法的 direct 与 pipe 调用、索引顺序、
 chunk 边界、stopped 与 error 传递，在 ASan 和 TSan lanes 均运行。
 
 ## Example smoke tests（示例冒烟）
@@ -696,10 +696,12 @@ constexpr forwarding 分类、借用结果的引用身份，以及经 FWD-ENV �
 `FORGE_TEST_ENABLE_FORGE_RUNTIME`、`FORGE_TEST_ENABLE_FORGE_ERASURE` 和
 `FORGE_TEST_ENABLE_FORGE_IO` 的任一组启用，并只检查已启用的组。
 
-`execution_extensions` 使用依赖 scheduler 查询的 source，检查 `forge::split`
+`forge_execution_extensions` 使用依赖 scheduler 查询的 source，检查 `forge::split`
 在有无 scheduler 的订阅环境中都公布空环境下的缓存签名，并验证实际交付。
 它还检查同一 source 类型的左值和右值连接各自使用对应的 operation 类型与 completion signatures。
-`execution_awaitable_conformance_compile` 检查仅支持右值 `co_await` 的可复制 awaitable
+`forge_split_allocations` 验证所选 allocator、唯一一次 start、交付和 teardown。
+非 TSan lane 另验证没有全局分配。TSan 运行同名用例但不替换全局分配函数。
+`forge_member_queries` 的 backport 专用编译用例检查仅支持右值 `co_await` 的可复制 awaitable
 以左值传入时被 `forge::split` 拒绝，以右值传入时被接受。
 完整原生 senders 路径下，`forge_execution_extensions_native_compile` 构建原生探针，
 `forge_execution_extensions_native` 运行同一程序，检查惰性缓存、单次执行与重放。
@@ -824,32 +826,35 @@ mutable-only start scheduler 的正例由环境按值返回；`prop` 返回 cons
 [exec.get.start.scheduler]/2 与 [exec.affine]/7 的拒绝控制。删除 `operator&` 的环境仍须选择
 scheduler-derived domain，并使 source 的 int 签名转换为 long，连接后交付转换所得的值。
 同名 runtime 目标去掉 `_compile` 后缀，覆盖 affine 的四种 cv/ref member customization、
-mutable-only scheduler 的实际调度及 wrapper 的类别转发，`&` / `&&` 返回不同 sender、不同 completion 集合及不同 connectability 的调度控制，Forge pool/strand 在无 stop token
-环境的正常完成与拒绝 stopped。`FORGE_AFFINE_FORGE_CONTROL_*` / `FORGE_AFFINE_FORGE_REJECT_*`
+mutable-only scheduler 的实际调度及 wrapper 的类别转发，以及 `&` / `&&` 返回不同 sender、
+不同 completion 集合及不同 connectability 的调度控制。Forge pool/strand 在无 stop token
+环境的正常完成与拒绝 stopped 由 `forge_strand` 检查，对应签名由 `forge_execution_header` 检查。`FORGE_AFFINE_FORGE_CONTROL_*` / `FORGE_AFFINE_FORGE_REJECT_*`
 逐一配对 pool/strand 的 stoppable 正例与无 token、never_stop_token 负例；另有 env<> 的
 sender_in 拒绝控制。既有 pool/strand fixture 保持原有环境与 stopped 结果。
 allocator 控制按 /28 检查有无 allocator 的 get-state prvalue/reference 构造；有效 receiver 的移动项恒为 true，throwing-move receiver 用负例检查概念与连接拒绝；
 不执行会在 noexcept get-state 内 terminate 的重建。带有效 signatures 却无法连接的 child，
 以及仅接受 signature receiver 的 successor，均检查 connect 的软拒绝。
 
-`execution_forge_predecessor_lifetime`
+`forge_predecessor_lifetime`
 将 pool、strand、timer、channel recv、`forge::task` 和 `erased_sender` 直接接入 `let_value`，
 在同步可用路径和其他线程完成路径中销毁 predecessor；另有 pool/timer 的同步 stopped 与 task
 的同步/跨线程 error 控制。Pool 和 timer 的 value completion 始终由 worker 发出；strand 以
 inline scheduler 提供同步 value 对照。Channel 在启动 pending recv 后由另一线程发送，task 在
 final_suspend 完成，erased sender 覆盖同步与 pool 来源。两个 sanitizer lane 的
-`execution|forge` 选择器均包含此测试，不依赖额外 Forge test group 开关。
+`execution|forge` 选择器均包含此测试，两个 lane 均启用 Forge runtime 测试。
 
 ### Awaitable 与 sender 双向桥接
 
 `execution_awaitable_conformance_compile`
 固定 marker short-circuit、enable_sender specialization、void / int / int& 的独立 signatures、
-member / ADL co_await、as_awaitable member、domain transform、noexcept 与 Forge 环境约束。
+member / ADL co_await、as_awaitable member、domain transform 与 noexcept。
+对 Forge 入口的编译期约束检查归入 `forge_member_queries`。
 配套 runtime `execution_awaitable_conformance`
 覆盖 value / void / error / stopped completion 内销毁 coroutine operation、跨线程恢复后自毁、
-when_all 混合 awaitable / sender、scope wrap / associate / spawn_future、split 重放，以及
-Forge scope、resource_context、start_detached、any_sender_of、erased_sender、wait_result、task 与 IO bridge。
-两条 sanitizer lanes 的 execution 选择规则包含这些 runtime 测试。
+when_all 混合 awaitable / sender 和 scope wrap / associate / spawn_future。
+`forge_task` 的 backport 专用用例覆盖 split 重放，以及 Forge scope、resource_context、
+start_detached、any_sender_of、erased_sender、wait_result、task 与 IO bridge。
+两条 sanitizer lanes 均选择这两个 runtime 目标。
 Round 2 控制另覆盖 completion / start 两种 domain transform、内部 completion awaiter 的
 receiver/value ADL 隔离、operation move 所有权、split 的 rvalue-only awaitable 类别，
 以及 any_sender_of 的 lvalue-only marked source 精确结果。Error / stopped 的 task

@@ -2,8 +2,7 @@
 
 #include "test_bulk.hpp"
 #include <gtest/gtest.h>
-#include "test_execution_completion.hpp"
-#include <forge/start_detached.hpp>
+#include "observe_completion.hpp"
 #include <execution>
 #include <atomic>
 #include <future>
@@ -684,37 +683,11 @@ TEST(BulkTest, SerialExecution) {
     EXPECT_EQ(std::get<0>(*result), 0+1+2+3+4);
 }
 
-TEST(StartDetachedTest, Executes) {
-    std::atomic<int> counter{0};
-    forge::start_detached(
-        std::execution::just() | std::execution::then([&counter] { counter++; }));
-    EXPECT_EQ(counter.load(), 1);
-}
-
-TEST(StartDetachedTest, HandlesSynchronousWhenAllCompletion) {
-    std::atomic<int> counter{0};
-    forge::start_detached(
-        std::execution::when_all(std::execution::just(), std::execution::just())
-        | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); }));
-    EXPECT_EQ(counter.load(), 1);
-}
-
 TEST(SynchronousReceiverDestructionTest, WhenAll) {
     std::atomic<int> counter{0};
     expect_synchronous_receiver_owned_destruction(
         std::execution::when_all(std::execution::just(), std::execution::just())
         | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); }));
-    EXPECT_EQ(counter.load(), 1);
-}
-
-TEST(StartDetachedTest, HandlesSynchronousStartsOnCompletion) {
-    std::atomic<int> counter{0};
-    std::execution::inline_scheduler sch;
-    forge::start_detached(
-        std::execution::starts_on(
-            sch,
-            std::execution::just()
-            | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); })));
     EXPECT_EQ(counter.load(), 1);
 }
 
@@ -810,17 +783,6 @@ TEST(StartsOnTest, DeclaresOnlySchedulerErrors) {
     } catch (int value) {
         EXPECT_EQ(value, 17);
     }
-}
-
-TEST(StartDetachedTest, HandlesSynchronousContinuesOnCompletion) {
-    std::atomic<int> counter{0};
-    std::execution::inline_scheduler sch;
-    forge::start_detached(
-        std::execution::continues_on(
-            std::execution::just()
-            | std::execution::then([&counter] { counter.fetch_add(1, std::memory_order_relaxed); }),
-            sch));
-    EXPECT_EQ(counter.load(), 1);
 }
 
 TEST(SynchronousReceiverDestructionTest, ContinuesOn) {

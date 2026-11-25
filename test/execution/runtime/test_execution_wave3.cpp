@@ -1,11 +1,10 @@
 #include <gtest/gtest.h>
 #include <execution>
 #include <type_traits>
-#include "../../forge/runtime/forge_completion_agent.hpp"
+#include "completion_agent.hpp"
 
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 #include <coroutine>
-#include <forge/task.hpp>
 #include <system_error>
 #include <utility>
 
@@ -38,23 +37,6 @@ TEST(CoroutineBridgeTest, CompletionCanFinishFrameBeforeStartReturns) {
         EXPECT_EQ(state.resumed_on, state.completed_on);
         EXPECT_NE(state.resumed_on, std::this_thread::get_id());
         EXPECT_EQ(state.resumptions, 1);
-    }
-}
-
-forge::task<int> await_error_code_sender() {
-    co_await std::execution::just_error(
-        std::make_error_code(std::errc::invalid_argument));
-    co_return 1;
-}
-
-TEST(CoroutineBridgeTest, ErrorCodeCompletionBecomesSystemError) {
-    try {
-        (void)std::this_thread::sync_wait(await_error_code_sender());
-        FAIL() << "Expected a system_error completion";
-    } catch (const std::system_error& error) {
-        EXPECT_EQ(error.code(), std::make_error_code(std::errc::invalid_argument));
-    } catch (...) {
-        FAIL() << "Unexpected exception type";
     }
 }
 
@@ -628,20 +610,4 @@ TEST(CoroutineBridgeTest, DefaultUnhandledStoppedPropagatesToContinuation) {
     EXPECT_FALSE(promise.errored);
 }
 
-forge::task<int> stopped_int_task() {
-    co_await std::execution::just_stopped();
-    co_return 7;
-}
-
-forge::task<void> stopped_void_task() {
-    co_await std::execution::just_stopped();
-}
-
-TEST(CoroutineBridgeTest, ForgeTaskPropagatesStoppedCompletion) {
-    auto int_result = std::this_thread::sync_wait(stopped_int_task());
-    EXPECT_FALSE(int_result.has_value());
-
-    auto void_result = std::this_thread::sync_wait(stopped_void_task());
-    EXPECT_FALSE(void_result.has_value());
-}
 #endif

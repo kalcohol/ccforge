@@ -3,7 +3,7 @@
 #include <forge/async_scope.hpp>
 #include <forge/timer_context.hpp>
 #include "forge_counting_resource.hpp"
-#include "forge_operation_destroy.hpp"
+#include "operation_destroy.hpp"
 #include "../../stop_completion_probe.hpp"
 #include <array>
 #include <atomic>

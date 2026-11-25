@@ -1,6 +1,4 @@
 #include <execution>
-#include <forge/static_thread_pool.hpp>
-#include <forge/strand.hpp>
 #include <type_traits>
 #include <utility>
 namespace ex = std::execution;
@@ -55,33 +53,9 @@ struct fallible_scheduler {
 using bad_env = decltype(ex::prop{ex::get_start_scheduler, fallible_scheduler{}});
 static_assert(!ex::sender_in<custom, bad_env>);
 static_assert(!ex::sender_in<decltype(ex::affine(ex::just())), bad_env>);
+static_assert(!ex::sender_in<decltype(ex::affine(ex::just())), empty>);
 using loop_start = decltype(ex::prop{ex::get_start_scheduler, std::declval<ex::run_loop::scheduler>()});
 static_assert(ex::sender_in<decltype(ex::affine(ex::just())), loop_start>);
-using pool_sender = ex::schedule_result_t<forge::static_thread_pool::scheduler>;
-using strand_sender = ex::schedule_result_t<forge::strand::scheduler>;
-static_assert(std::same_as<ex::completion_signatures_of_t<pool_sender, empty>,
-    ex::completion_signatures<ex::set_value_t(), ex::set_stopped_t()>>);
-static_assert(std::same_as<ex::completion_signatures_of_t<strand_sender, empty>,
-    ex::completion_signatures<ex::set_value_t(), ex::set_stopped_t()>>);
-static_assert(std::same_as<ex::completion_signatures_of_t<pool_sender, stop_env>,
-    ex::completion_signatures<ex::set_value_t(), ex::set_stopped_t()>>);
-static_assert(std::same_as<ex::completion_signatures_of_t<strand_sender, stop_env>,
-    ex::completion_signatures<ex::set_value_t(), ex::set_stopped_t()>>);
-using pool_env = decltype(ex::prop{ex::get_start_scheduler, std::declval<forge::static_thread_pool::scheduler>()});
-using strand_env = decltype(ex::prop{ex::get_start_scheduler, std::declval<forge::strand::scheduler>()});
-template<class Env>
-using stoppable_start = ex::env<Env, stop_env>;
-using never_env = decltype(ex::prop{std::get_stop_token, std::never_stop_token{}});
-template<class Env>
-using never_start = ex::env<Env, never_env>;
-using affine_value = decltype(ex::affine(ex::just()));
-static_assert(!ex::sender_in<affine_value, empty>);
-static_assert(!ex::sender_in<affine_value, pool_env>);
-static_assert(!ex::sender_in<affine_value, strand_env>);
-static_assert(!ex::sender_in<affine_value, never_start<pool_env>>);
-static_assert(!ex::sender_in<affine_value, never_start<strand_env>>);
-static_assert(ex::sender_in<affine_value, stoppable_start<pool_env>>);
-static_assert(ex::sender_in<affine_value, stoppable_start<strand_env>>);
 static_assert(std::same_as<decltype(ex::unstoppable(ex::just())),
     decltype(ex::write_env(ex::just(), ex::prop{std::get_stop_token, std::never_stop_token{}}))>);
 
@@ -120,6 +94,7 @@ struct mutable_scheduler {
     }
     bool operator==(const mutable_scheduler&) const noexcept = default;
 };
+using affine_value = decltype(ex::affine(ex::just()));
 using mutable_wrapper = ex::__forge_affine::__unstoppable_scheduler<mutable_scheduler>;
 template<class Sch> concept schedulable = requires(Sch&& sch) { ex::schedule(static_cast<Sch&&>(sch)); };
 static_assert(schedulable<mutable_wrapper&> && schedulable<mutable_wrapper>);

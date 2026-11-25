@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
-#include "test_execution_completion.hpp"
+#include "observe_completion.hpp"
 #include <execution>
 #include "test_execution_manual_sender.hpp"
-#include "../../forge/runtime/forge_operation_destroy.hpp"
+#include "operation_destroy.hpp"
 #include <atomic>
 #include <chrono>
 #include <concepts>

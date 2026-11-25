@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 #include <forge/any_scheduler.hpp>
 #include <forge/static_thread_pool.hpp>
-#include "forge_operation_destroy.hpp"
+#include "operation_destroy.hpp"
 #include <execution>
 #include <memory>
 #include <stdexcept>

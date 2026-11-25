@@ -6,8 +6,8 @@
 #include <forge/io/result.hpp>
 #include <forge/static_thread_pool.hpp>
 
-#include "forge_operation_destroy.hpp"
-#include "forge_completion_agent.hpp"
+#include "operation_destroy.hpp"
+#include "completion_agent.hpp"
 
 #include <algorithm>
 #include <atomic>

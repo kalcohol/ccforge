@@ -25,7 +25,7 @@
 #undef FORGE_TEST_EXPECT_WIN32_LEAN_AND_MEAN_UNDEFINED
 
 #include "forge_counting_resource.hpp"
-#include "forge_operation_destroy.hpp"
+#include "operation_destroy.hpp"
 #include <execution>
 #include <algorithm>
 #include <array>

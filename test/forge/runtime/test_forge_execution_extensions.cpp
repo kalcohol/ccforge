@@ -5,7 +5,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#include "../../forge/runtime/forge_operation_destroy.hpp"
+#include "operation_destroy.hpp"
 
 // The fallback environment and senders share the same empty environment type.
 static_assert(std::same_as<decltype(std::execution::get_env(0)), std::execution::env<>>);

@@ -165,9 +165,11 @@ add_library(
     OBJECT
     EXCLUDE_FROM_ALL
     ${_forge_execution_fragment_sources})
+_forge_test_owner(_forge_execution_fragment_owner)
 target_link_libraries(
     test_execution_fragment_includes PRIVATE
-    forge::forge)
+    ${_forge_execution_fragment_owner})
+unset(_forge_execution_fragment_owner)
 add_test(
     NAME execution_fragment_includes_compile
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
@@ -448,12 +450,6 @@ if(MSVC)
     target_compile_options(test_execution_counting_scope PRIVATE /bigobj)
     target_compile_options(test_execution_spawn_future PRIVATE /bigobj)
 endif()
-forge_add_execution_runtime_test(test_execution_any_sender test_execution_any_sender.cpp execution_any_sender)
-
-forge_add_execution_runtime_test(
-    test_execution_extensions
-    test_execution_extensions.cpp
-    execution_extensions)
 
 # Call the consumer in its body so the Mandates are instantiated.
 set(_forge_sync_wait_defs "${CMAKE_REQUIRED_DEFINITIONS}")
@@ -484,7 +480,7 @@ foreach(_target IN ITEMS test_execution_removed_forms test_execution_standard_fo
     set_tests_properties(${_test} PROPERTIES
         DEPENDS ${_test}_compile TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endforeach()
-foreach(_case RANGE 1 35)
+foreach(_case RANGE 1 33)
     set(CMAKE_REQUIRED_DEFINITIONS ${_forge_extension_defs}
         -DFORGE_REMOVED_NAME=${_case} -DFORGE_REMOVAL_CONTROL=1)
     forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_REMOVED_NAME_CONTROL_${_case}
@@ -524,40 +520,13 @@ set(CMAKE_REQUIRED_DEFINITIONS "${_forge_adaptor_saved_defs}")
 unset(_forge_adaptor_saved_defs)
 
 # Scheduling attributes and affine use receiver-dependent query contracts.
-set(_forge_scheduling_saved_defs "${CMAKE_REQUIRED_DEFINITIONS}")
 forge_add_execution_compile_probe(test_execution_scheduling_conformance
     test_execution_scheduling_conformance.cpp execution_scheduling_conformance_compile)
 forge_add_execution_runtime_test(test_execution_scheduling_conformance_runtime
     test_execution_scheduling_conformance.cpp execution_scheduling_conformance)
-set(CMAKE_REQUIRED_DEFINITIONS ${_forge_scheduling_saved_defs})
-foreach(_scheduler RANGE 0 1)
-    foreach(_token RANGE 0 1)
-        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_scheduling_saved_defs}
-            -DFORGE_AFFINE_FORGE_SCHEDULER=${_scheduler} -DFORGE_AFFINE_FORGE_TOKEN=${_token}
-            -DFORGE_ADAPTOR_POSITIVE=1)
-        forge_expect_execution_cxx_source_compiles(FORGE_AFFINE_FORGE_CONTROL_MEMBER_${_scheduler}_${_token}
-            test_execution_reject_affine_forge.cpp ON "Stoppable Forge affine control must compile and link")
-        set(CMAKE_REQUIRED_DEFINITIONS ${_forge_scheduling_saved_defs}
-            -DFORGE_AFFINE_FORGE_SCHEDULER=${_scheduler} -DFORGE_AFFINE_FORGE_TOKEN=${_token})
-        forge_expect_execution_cxx_source_compiles(FORGE_AFFINE_FORGE_REJECT_MEMBER_${_scheduler}_${_token}
-            test_execution_reject_affine_forge.cpp OFF "Unstoppable Forge affine connection must be unavailable")
-    endforeach()
-endforeach()
 if(MSVC)
     target_compile_options(test_execution_scheduling_conformance PRIVATE /bigobj)
     target_compile_options(test_execution_scheduling_conformance_runtime PRIVATE /bigobj)
-endif()
-set(CMAKE_REQUIRED_DEFINITIONS "${_forge_scheduling_saved_defs}")
-unset(_forge_scheduling_saved_defs)
-unset(_scheduler)
-unset(_token)
-
-# Replacing a Forge predecessor in let destroys it during its own completion.
-# Both sanitizer lanes build execution tests and select the execution prefix.
-forge_add_execution_runtime_test(test_execution_forge_predecessor_lifetime
-    test_execution_forge_predecessor_lifetime.cpp execution_forge_predecessor_lifetime)
-if(MSVC)
-    target_compile_options(test_execution_forge_predecessor_lifetime PRIVATE /bigobj)
 endif()
 
 # Awaitable signatures, coroutine ownership and Mandates.
@@ -597,8 +566,3 @@ if(MSVC)
 endif()
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_awaitable_saved_defs}")
 unset(_forge_awaitable_saved_defs)
-
-
-# The execution prefix selects this runtime test in both sanitizer lanes.
-forge_add_execution_runtime_test(test_execution_forge_bulk
-    test_execution_forge_bulk.cpp execution_forge_bulk)

@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 #include <forge/channel.hpp>
 #include "forge_counting_resource.hpp"
-#include "forge_operation_destroy.hpp"
+#include "operation_destroy.hpp"
 #include <execution>
 #include <atomic>
 #include <chrono>

@@ -1,6 +1,6 @@
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
-#include "forge_completion_agent.hpp"
+#include "completion_agent.hpp"
 #include <forge/task.hpp>
 #include <forge/channel.hpp>
 #include <forge/static_thread_pool.hpp>

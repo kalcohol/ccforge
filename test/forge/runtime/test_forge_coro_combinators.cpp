@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 #include <forge/io/combinators.hpp>
-#include "forge_operation_destroy.hpp"
+#include "operation_destroy.hpp"
 #include "../../stop_completion_probe.hpp"
 
 #include <atomic>

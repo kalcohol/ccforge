@@ -1,7 +1,7 @@
 #include <forge/bulk.hpp>
 #include <execution>
 #include <gtest/gtest.h>
-#include "test_execution_completion.hpp"
+#include "observe_completion.hpp"
 
 #include <array>
 #include <concepts>

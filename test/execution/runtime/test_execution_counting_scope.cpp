@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include "test_execution_completion.hpp"
+#include "observe_completion.hpp"
 #include <execution>
-#include "../../forge/runtime/forge_operation_destroy.hpp"
+#include "operation_destroy.hpp"
 #include "test_execution_manual_sender.hpp"
 #include "test_thread_pool.hpp"
 #include <atomic>

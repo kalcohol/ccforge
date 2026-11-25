@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "../../forge/runtime/forge_operation_destroy.hpp"
+#include "operation_destroy.hpp"
 #include "../compile/stopped_optional_probe.hpp"
 
 #include <execution>

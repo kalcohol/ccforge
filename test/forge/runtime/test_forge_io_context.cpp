@@ -6,7 +6,7 @@
 #include <forge/wait_result.hpp>
 #include "forge_counting_resource.hpp"
 #include "forge_io_posix_fd.hpp"
-#include "forge_operation_destroy.hpp"
+#include "operation_destroy.hpp"
 #include <execution>
 #include <array>
 #include <cerrno>

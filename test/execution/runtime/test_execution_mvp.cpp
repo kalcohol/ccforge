@@ -1,9 +1,7 @@
 #include "test_bulk.hpp"
-#include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
-#include "test_execution_completion.hpp"
+#include "observe_completion.hpp"
 
-#include <forge/start_detached.hpp>
 #include <execution>
 
 #include <memory>
@@ -662,18 +660,6 @@ TEST(ExecutionMvpTest, NonCopyableLvaluePipelineSyncWaitRequiresMove) {
     EXPECT_EQ(std::get<0>(*result), 42);
 }
 
-TEST(ExecutionMvpTest, NonCopyableLvaluePipelineStartDetachedRequiresMove) {
-    bool ran = false;
-    auto sndr = std::execution::just(std::make_unique<int>(7))
-        | std::execution::then([&](std::unique_ptr<int> value) noexcept {
-              ran = (*value == 7);
-          });
-
-    forge::start_detached(std::move(sndr));
-
-    EXPECT_TRUE(ran);
-}
-
 TEST(ExecutionMvpTest, NonCopyableLvaluePipelineStartsOnRequiresMove) {
     std::execution::inline_scheduler scheduler;
     auto source = std::execution::just(std::make_unique<int>(9))
@@ -696,17 +682,6 @@ TEST(ExecutionMvpTest, NonCopyableLvaluePipelineContinuesOnRequiresMove) {
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 11);
-}
-
-TEST(ExecutionMvpTest, NonCopyableLvaluePipelineSplitRequiresMove) {
-    auto source = std::execution::just(std::make_unique<int>(13))
-        | std::execution::then(deref_unique{});
-    auto sndr = forge::split(std::move(source));
-
-    auto result = std::this_thread::sync_wait(std::move(sndr));
-
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(std::get<0>(*result), 13);
 }
 
 TEST(ExecutionMvpTest, NonCopyableLvaluePipelineWhenAllRequiresMove) {
@@ -748,16 +723,6 @@ TEST(ExecutionMvpTest, MoveOnlySenderConnectsAsRvalue) {
                 | std::execution::then(deref_unique{});
 
     auto result = std::this_thread::sync_wait(std::move(sender));
-
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(std::get<0>(*result), 42);
-}
-
-TEST(ExecutionMvpTest, TransferJustCompletesOnScheduler) {
-    std::execution::inline_scheduler scheduler;
-
-    auto result = std::this_thread::sync_wait(
-        forge::transfer_just(scheduler, 42));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);

@@ -1,9 +1,5 @@
 #include <execution>
 
-#if FORGE_REMOVED_NAME == 34 || FORGE_REMOVED_NAME == 35
-#include <forge/execution_extensions.hpp>
-#endif
-
 #include <concepts>
 #include <memory>
 #include <optional>
@@ -238,14 +234,6 @@ int main() {
     using removed [[maybe_unused]] = decltype(std::declval<const scope&>().count());
 #else
     using removed [[maybe_unused]] = decltype(std::declval<const scope&>().is_closed());
-#endif
-#elif FORGE_REMOVED_NAME == 34 || FORGE_REMOVED_NAME == 35
-#if FORGE_REMOVAL_CONTROL
-    static_assert(ex::sender<decltype(forge::transfer_just(ex::inline_scheduler{}, 42))>);
-#elif FORGE_REMOVED_NAME == 34
-    using forge::scope_count;
-#else
-    using forge::scope_is_closed;
 #endif
 #else
 #error "Select a removed name"

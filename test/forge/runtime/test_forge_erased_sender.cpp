@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 #include <forge/erased_sender.hpp>
 #include <forge/static_thread_pool.hpp>
-#include "forge_operation_destroy.hpp"
+#include "operation_destroy.hpp"
 #include <execution>
 #include <exception>
 #include <memory>

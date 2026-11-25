@@ -1,7 +1,7 @@
 #include "../scheduler_fixture.hpp"
 
 #include <gtest/gtest.h>
-#include "test_execution_completion.hpp"
+#include "observe_completion.hpp"
 #include <execution>
 #include <array>
 #include <atomic>

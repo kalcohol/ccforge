@@ -1,12 +1,4 @@
 #include "awaitable_conformance_types.hpp"
-#include <forge/any_sender.hpp>
-#include <forge/async_scope.hpp>
-#include <forge/erased_sender.hpp>
-#include <forge/wait_result.hpp>
-#include <forge/io/coro.hpp>
-#include <forge/resource_context.hpp>
-#include <forge/start_detached.hpp>
-#include <forge/task.hpp>
 #include <tuple>
 
 namespace a = awaitable_tests;
@@ -47,11 +39,6 @@ static_assert(!noexcept(ex::connect(a::raw_sender{}, a::receiver{})));
 static_assert(ex::__forge_sender_to<a::start_sender, a::start_receiver>);
 static_assert(!noexcept(ex::connect(a::start_sender{}, a::start_receiver{})));
 static_assert(ex::__forge_sender_to<a::adl_value_awaiter, awaitable_adl::receiver>);
-static_assert(ex::sender<forge::task<int>> && ex::sender<forge::task<void>>);
-static_assert(ex::sender<forge::__task_detail::__final_awaiter>);
-static_assert(!ex::sender<forge::io::read_env_awaitable>);
-static_assert(!ex::sender<forge::io::io_task<int>>);
-static_assert(!ex::sender<forge::io::__coro_detail::sender_awaitable<decltype(ex::just())>>);
 static_assert(!ex::__forge_awaitable::__is_awaitable<a::int_awaiter, a::rejecting_promise>);
 
 // 7.1, 7.2, 7.3, 7.4 and identity have independent noexcept oracles.
@@ -122,48 +109,9 @@ static_assert(std::same_as<awaitable_result<member_co_await_sender<false>>,
     member_co_await_sender<false>&&>);
 static_assert(std::same_as<awaitable_result<a::int_awaiter&>, a::int_awaiter&>);
 
-template<class S> concept scope_spawn = requires(forge::async_scope& scope, S&& s) {
-    scope.spawn(static_cast<S&&>(s));
-};
-template<class S> concept resource_spawn = requires(forge::resource_context& context, S&& s) {
-    context.spawn(static_cast<S&&>(s));
-};
-template<class S> concept detached = requires(S&& s) { forge::start_detached(static_cast<S&&>(s)); };
-template<class S> concept io_await = requires(S&& s) { forge::io::await_sender(static_cast<S&&>(s)); };
-template<class S> concept splittable = requires(S&& s) { forge::split(static_cast<S&&>(s)); };
-using any_int = forge::any_sender_of<ex::completion_signatures<ex::set_value_t(int)>>;
-static_assert(scope_spawn<a::int_awaiter> && resource_spawn<a::int_awaiter>);
-static_assert(detached<a::int_awaiter> && io_await<a::int_awaiter> && splittable<a::int_awaiter>);
-static_assert(!splittable<a::member_awaitable&>);
-static_assert(splittable<a::member_awaitable>);
 static_assert(!ex::sender_in<a::lvalue_sender, ex::env<>>);
 static_assert(ex::sender_in<a::lvalue_sender&, ex::env<>>);
-static_assert(std::constructible_from<any_int, a::lvalue_sender>);
-static_assert(std::same_as<decltype(std::declval<any_int&>().sync_wait()),
-    std::optional<std::tuple<int>>>);
-static_assert(std::constructible_from<any_int, a::int_awaiter>);
-static_assert(std::constructible_from<any_int, a::address_awaiter>);
-static_assert(!std::constructible_from<any_int, a::void_awaiter>);
-static_assert(!std::constructible_from<any_int, a::member_awaitable>); // Stored copyable S is borrowed as S&.
 static_assert(ex::sender<a::unstoppable_awaiter>);
-static_assert(detached<a::unstoppable_awaiter>);
-static_assert(!scope_spawn<a::unstoppable_awaiter> && !resource_spawn<a::unstoppable_awaiter>);
-static_assert(!io_await<a::unstoppable_awaiter>);
-static_assert(!scope_spawn<a::not_awaitable> && !resource_spawn<a::not_awaitable>);
-static_assert(!detached<a::not_awaitable> && !io_await<a::not_awaitable> && !splittable<a::not_awaitable>);
-
-using erased_int = forge::erased_sender<int_sigs>;
-using erased_narrow = forge::erased_sender<ex::completion_signatures<ex::set_value_t(int)>>;
-static_assert(std::constructible_from<erased_int, a::int_awaiter>);
-static_assert(!std::constructible_from<erased_narrow, a::int_awaiter>);
-static_assert(!std::constructible_from<erased_int, a::member_awaitable>);
-template<class S> concept result_waitable = requires(S&& s) {
-    forge::wait_result_of(static_cast<S&&>(s));
-    forge::wait_result(static_cast<S&&>(s));
-};
-static_assert(result_waitable<a::int_awaiter>);
-static_assert(!result_waitable<a::unstoppable_awaiter>);
-static_assert(!result_waitable<a::not_awaitable>);
 
 int main() {
     awaitable_adl::result output;

@@ -1,5 +1,5 @@
 #include "test_bulk.hpp"
-#include <forge/detail/execution_concepts.hpp>
+#include "sender_to.hpp"
 #include <execution>
 
 #include "../bulk_policy_probe.hpp"
@@ -132,7 +132,7 @@ int main() {
     static_assert(std::same_as<decltype(domain_env), ex::env<ex::prop<ex::get_domain_t, tagged_domain>>>);
     static_assert(ex::receiver<domain_receiver> && ex::sender_in<decltype(sndr), ex::env_of_t<domain_receiver>>);
     static_assert(ex::operation_state<ex::connect_result_t<decltype(sndr), domain_receiver>>);
-    static_assert(forge::__detail::__sender_to<decltype(sndr), domain_receiver>);
+    static_assert(test_execution::sender_to<decltype(sndr), domain_receiver>);
     static_assert(noexcept(ex::transform_sender(sndr, domain_env)));
     auto& transformed = ex::transform_sender(sndr, domain_env);
     auto& default_transformed = ex::default_domain{}.transform_sender(ex::set_value, sndr, environment);
