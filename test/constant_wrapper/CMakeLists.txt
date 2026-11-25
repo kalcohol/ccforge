@@ -17,25 +17,7 @@ forge_add_compile_probe(
     "${FORGE_CONSTANT_WRAPPER_COMPILE_DIR}/test_constant_wrapper_array_member.cpp"
     constant_wrapper_array_member_compile)
 
-set(_FORGE_CONSTANT_WRAPPER_SAVED_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES}")
-set(_FORGE_CONSTANT_WRAPPER_SAVED_REQUIRED_DEFINITIONS "${CMAKE_REQUIRED_DEFINITIONS}")
-set(CMAKE_REQUIRED_INCLUDES "${FORGE_INCLUDE_DIR}")
-if(FORGE_NEEDS_BACKPORT)
-    list(PREPEND CMAKE_REQUIRED_INCLUDES "${FORGE_BACKPORT_DIR}")
-endif()
-foreach(_forge_required_target IN ITEMS forge_std forge)
-    if(TARGET ${_forge_required_target})
-        get_target_property(
-            _forge_target_definitions
-            ${_forge_required_target}
-            INTERFACE_COMPILE_DEFINITIONS)
-        if(_forge_target_definitions)
-            foreach(_forge_definition IN LISTS _forge_target_definitions)
-                list(APPEND CMAKE_REQUIRED_DEFINITIONS "-D${_forge_definition}")
-            endforeach()
-        endif()
-    endif()
-endforeach()
+set(CMAKE_REQUIRED_INCLUDES "")
 forge_expect_cxx_source_compiles(
     FORGE_CONSTANT_WRAPPER_ACCEPTS_MATCHING_TYPE
     "${FORGE_CONSTANT_WRAPPER_COMPILE_DIR}/test_constant_wrapper_accept_matching_type.cpp"
@@ -46,6 +28,3 @@ forge_expect_cxx_source_compiles(
     "${FORGE_CONSTANT_WRAPPER_COMPILE_DIR}/test_constant_wrapper_reject_mismatched_type.cpp"
     OFF
     "std::constant_wrapper must reject an explicit second template argument that differs from decltype(X)")
-set(CMAKE_REQUIRED_INCLUDES "${_FORGE_CONSTANT_WRAPPER_SAVED_REQUIRED_INCLUDES}")
-set(CMAKE_REQUIRED_DEFINITIONS "${_FORGE_CONSTANT_WRAPPER_SAVED_REQUIRED_DEFINITIONS}")
-unset(_forge_target_definitions)

@@ -94,9 +94,9 @@ FORGE_VERIFY_FLOOR_SKIP_STYLE_AUDIT=1 scripts/verify-selfhosted-floor.sh
 - 公开文档和 example 中带限定的 `sync_wait` 是否写作 `std::this_thread::sync_wait`
   （Forge 扩展入口 `forge::sync_wait` 与列出迁移后拼写的对照表除外）；
 - 三语 README 的特性表、代码块和链接结构是否一致；
-- `test/CMakeLists.txt` 声明的 `FORGE_TEST_ENABLE_*` 和 `forge.cmake` 声明的
-  `FORGE_ENABLE_FORGE_*` 是否与 `docs/testing.md` / `docs/install-options.md`
-  记载的集合完全一致；
+- `test/CMakeLists.txt` 声明的 `FORGE_TEST_ENABLE_*`、`forge.cmake` 声明的
+  `FORGE_ENABLE_EXTENSIONS`，以及 `cmake/ForgeExtensions.cmake` 声明的四个
+  `FORGE_ENABLE_FORGE_*` 是否与 `docs/testing.md` / `docs/install-options.md` 记载的集合完全一致；
 - 治理守卫：`FORGE_FORCE_*_BACKPORT` 与 backport 定义的 `__cpp_lib_*` 宏有文档；
   标准 example 被对应的 backport 页面链接；`docs/roadmap/` 下各文档的状态行与索引一致；
   example 带用途头注释，且 env / bulk 写法
@@ -433,6 +433,11 @@ fixtures 检查上述注册集合，只构建共享头文件路径的 `hive_cons
 
 Hive 基准运行方法见[测量说明](../test/hive/benchmark/MEASUREMENT_PROTOCOL.txt)。
 
+`FORGE_ENABLE_EXTENSIONS` 在有扩展头文件目录时默认 ON。设为 `OFF` 时不创建
+`forge::forge`，不运行平台 IO probe，也不注册 `forge_` 示例、`test/forge` 或
+`test/unique_resource`。尚依赖完整 target 的混合测试组暂不注册，已独立的 Hive 与
+标准 target 检查仍可运行。
+
 `FORGE_TEST_ENABLE_FORGE` 是 `include/forge/` extension tests 的 parent switch。
 更窄的 `FORGE_TEST_ENABLE_FORGE_*` 开关默认仍启用当前测试，同时允许 future
 resource、IO 和 erasure subsets 被独立配置。Resource-policy tests 还要求
@@ -604,6 +609,16 @@ scripts/verify-install-package.sh
 FORGE_INSTALL_CMAKE_GENERATOR='Ninja Multi-Config' \
 FORGE_INSTALL_CONFIG=Release scripts/verify-install-package.sh
 ```
+
+只验证标准安装时可以单独运行：
+
+```bash
+scripts/verify-install-package.sh --standard-only build/install-package-standard
+```
+
+该场景从没有 `include/forge` 的源码副本安装到新前缀，移动前缀后只用
+`forge::std` 构建外部消费者。它还检查导出、语言 guard、无平台 IO probe、
+无扩展头文件，以及消费者显式要求开启扩展时的诊断。
 
 这个检查故意不放进 default CTest，因为它会执行第二轮 configure / install / build cycle。
 修改 CMake packaging 或 install layout、以及 release-oriented change 前应运行它。

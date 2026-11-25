@@ -1,6 +1,6 @@
 # CC Forge 示例索引
 
-启用 `FORGE_BUILD_EXAMPLES=ON` 构建；另启用 `FORGE_BUILD_TESTS=ON` 注册 `example_<target>_smoke`。明确不可用返回 77 并由 CTest 标为跳过。标准接口按“强制 OR 完整 OR 非部分”门控；NATIVE_INCOMPATIBLE 列出依赖扩展的例外。
+启用 `FORGE_BUILD_EXAMPLES=ON` 构建；另启用 `FORGE_BUILD_TESTS=ON` 注册 `example_<target>_smoke`。明确不可用返回 77 并由 CTest 标为跳过。标准接口按“强制 OR 完整 OR 非部分”门控；NATIVE_INCOMPATIBLE 标记仅支持 backport 拼写的例外。所有以 `forge_` 开头的示例都需要 `FORGE_ENABLE_EXTENSIONS=ON`。
 
 ## 标准 backport
 
@@ -18,7 +18,7 @@
 | [linalg_simd_example.cpp](../example/linalg_simd_example.cpp) | linalg simd 的接口组合与完成结果 | `linalg_simd_example` / `example_linalg_simd_example_smoke` | LINALG：强制 OR 完整 OR 非部分；需要 mdspan | [说明](backports/linalg.md) |
 | [linalg_views_example.cpp](../example/linalg_views_example.cpp) | linalg views 的接口组合与完成结果 | `linalg_views` / `example_linalg_views_smoke` | LINALG：强制 OR 完整 OR 非部分；需要 mdspan | [说明](backports/linalg.md) |
 | [padded_mdspan_layout_example.cpp](../example/padded_mdspan_layout_example.cpp) | padded mdspan layout 的接口组合与完成结果 | `padded_mdspan_layout_example` / `example_padded_mdspan_layout_example_smoke` | MDSPAN_PADDED_LAYOUTS：强制 OR 完整 OR 非部分；需要 mdspan | [说明](backports/mdspan.md) |
-| [simd_complete_example.cpp](../example/simd_complete_example.cpp) | SIMD 内存、mask 与排列（Forge 扩展拼写） | `simd_complete_example` / `example_simd_complete_example_smoke` | SIMD：强制 OR 完整 OR 非部分；NATIVE_INCOMPATIBLE，Forge 扩展 | [说明](backports/simd.md) |
+| [simd_complete_example.cpp](../example/simd_complete_example.cpp) | SIMD 内存、mask 与排列（backport 拼写） | `simd_complete_example` / `example_simd_complete_example_smoke` | SIMD：仅 backport 或强制注入（NATIVE_INCOMPATIBLE） | [说明](backports/simd.md) |
 | [simd_example.cpp](../example/simd_example.cpp) | simd 的接口组合与完成结果 | `simd_example` / `example_simd_example_smoke` | SIMD：强制 OR 完整 OR 非部分 | [说明](backports/simd.md) |
 | [submdspan_example.cpp](../example/submdspan_example.cpp) | 行列、步长切片与边界单元 | `submdspan_example` / `example_submdspan_example_smoke` | SUBMDSPAN：强制 OR 完整 OR 非部分；需要 mdspan | [说明](backports/mdspan.md) |
 
@@ -27,7 +27,7 @@
 | 文件 | 演示内容 | target / 冒烟测试 | 门控 | 文档页 |
 | --- | --- | --- | --- | --- |
 | [execution_affine_example.cpp](../example/execution_affine_example.cpp) | execution affine 的接口组合与完成结果 | `execution_affine` / `example_execution_affine_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
-| [execution_combinators_example.cpp](../example/execution_combinators_example.cpp) | when_all、结果复用、bulk 与 scope spawn（Forge 扩展拼写） | `execution_combinators_example` / `example_execution_combinators_example_smoke` | SENDERS：强制 OR 完整 OR 非部分；NATIVE_INCOMPATIBLE，Forge 扩展 | [说明](backports/execution.md) |
+| [execution_combinators_example.cpp](../example/execution_combinators_example.cpp) | when_all 与 scope spawn | `execution_combinators_example` / `example_execution_combinators_example_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
 | [execution_coro_example.cpp](../example/execution_coro_example.cpp) | execution coro 的接口组合与完成结果 | `execution_coro` / `example_execution_coro_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
 | [execution_example.cpp](../example/execution_example.cpp) | execution 的接口组合与完成结果 | `execution_example` / `example_execution_example_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
 | [execution_let_example.cpp](../example/execution_let_example.cpp) | execution let 的接口组合与完成结果 | `execution_let` / `example_execution_let_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
@@ -48,6 +48,7 @@
 | [forge_async_scope_example.cpp](../example/forge_async_scope_example.cpp) | forge async scope 的接口组合与完成结果 | `forge_async_scope` / `example_forge_async_scope_smoke` | FORGE_ENABLE_FORGE_RUNTIME | [说明](forge-utilities.md) |
 | [forge_bounded_pipeline_example.cpp](../example/forge_bounded_pipeline_example.cpp) | 单 worker 非阻塞通道消费 | `forge_bounded_pipeline` / `example_forge_bounded_pipeline_smoke` | FORGE_ENABLE_FORGE_RUNTIME + FORGE_ENABLE_FORGE_RESOURCE_POLICY | [说明](forge-utilities.md) |
 | [forge_channel_example.cpp](../example/forge_channel_example.cpp) | forge channel 的接口组合与完成结果 | `forge_channel` / `example_forge_channel_smoke` | FORGE_ENABLE_FORGE_RUNTIME | [说明](forge-utilities.md) |
+| [forge_execution_combinators_example.cpp](../example/forge_execution_combinators_example.cpp) | 缓存 sender 结果，并在可用时执行串行 bulk | `forge_execution_combinators_example` / `example_forge_execution_combinators_example_smoke` | SENDERS：强制 OR 完整 OR 非部分 | [说明](backports/execution.md) |
 | [forge_graceful_shutdown_example.cpp](../example/forge_graceful_shutdown_example.cpp) | forge graceful shutdown 的接口组合与完成结果 | `forge_graceful_shutdown` / `example_forge_graceful_shutdown_smoke` | FORGE_ENABLE_FORGE_RUNTIME | [说明](forge-utilities.md) |
 | [forge_resource_context_example.cpp](../example/forge_resource_context_example.cpp) | forge resource context 的接口组合与完成结果 | `forge_resource_context` / `example_forge_resource_context_smoke` | FORGE_ENABLE_FORGE_RUNTIME | [说明](forge-utilities.md) |
 | [forge_resource_policy_example.cpp](../example/forge_resource_policy_example.cpp) | forge resource policy 的接口组合与完成结果 | `forge_resource_policy` / `example_forge_resource_policy_smoke` | FORGE_ENABLE_FORGE_RUNTIME + FORGE_ENABLE_FORGE_RESOURCE_POLICY | [说明](forge-utilities.md) |
@@ -64,7 +65,7 @@
 
 | 文件 | 演示内容 | target / 冒烟测试 | 门控 | 文档页 |
 | --- | --- | --- | --- | --- |
-| [unique_resource_example.cpp](../example/unique_resource_example.cpp) | 用 `forge::unique_resource` 管理文件句柄 | `unique_resource_example` / `example_unique_resource_example_smoke` | 始终 | [说明](forge-utilities.md#unique-resource) |
+| [forge_unique_resource_example.cpp](../example/forge_unique_resource_example.cpp) | 用 `forge::unique_resource` 管理文件句柄 | `forge_unique_resource_example` / `example_forge_unique_resource_example_smoke` | 无额外条件 | [说明](forge-utilities.md#unique-resource) |
 
 ## OS IO sender 后端
 

@@ -175,4 +175,7 @@ MIT License. See [LICENSE](LICENSE).
 
 [Installation and options](docs/install-options.md)
 
+`FORGE_ENABLE_EXTENSIONS=OFF` configures and installs only the standard-header target,
+`forge::std`. The option defaults to ON when the extension headers are present.
+
 FORGE_ENABLE_FORGE_RUNTIME controls runtime examples only. Set CMAKE_CXX_STANDARD before Forge probes; a later target cxx_std_26 can otherwise disagree with the probe language mode.

@@ -33,6 +33,14 @@ if(FORGE_ENABLE_INSTALL)
     set(FORGE_INSTALL_BACKPORTDIR "${CMAKE_INSTALL_DATADIR}/ccforge/backport"
         CACHE STRING "Install directory for CC Forge standard-header backports")
 
+    set(_forge_package_extension_check "")
+    if(FORGE_ENABLE_EXTENSIONS)
+        set(_forge_package_extension_check [=[
+if(NOT IS_DIRECTORY "${_CCFORGE_PACKAGE_INCLUDE_DIR}/forge")
+    message(FATAL_ERROR "CC Forge requires an extension header directory at ${_CCFORGE_PACKAGE_INCLUDE_DIR}/forge")
+endif()
+]=])
+    endif()
     configure_package_config_file(
         "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CCForgeConfig.cmake.in"
         "${CMAKE_CURRENT_BINARY_DIR}/CCForgeConfig.cmake"
@@ -49,13 +57,16 @@ if(FORGE_ENABLE_INSTALL)
         ARCH_INDEPENDENT
     )
 
-    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
-        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+    if(FORGE_ENABLE_EXTENSIONS)
+        install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
+            DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+    endif()
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/backport/"
         DESTINATION "${FORGE_INSTALL_BACKPORTDIR}")
     install(FILES
         "${CMAKE_CURRENT_SOURCE_DIR}/forge.cmake"
         "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ForgeBackportProbes.cmake"
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ForgeExtensions.cmake"
         "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ForgeMsvcHeaders.cmake"
         "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ForgeProbeFingerprint.cmake"
         "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ForgeConfiguration.cmake"
@@ -85,6 +96,18 @@ if(FORGE_IS_TOP_LEVEL)
     if(FORGE_BUILD_TESTS)
         add_subdirectory(test)
     endif()
+
+    # The runtime gate runs outside CTest. Record what this configuration
+    # expects, independently of whether the build produced the executables.
+    set(_forge_io_uring_gate "backend=${FORGE_HAS_FORGE_IO_URING_BACKEND}\n")
+    if(FORGE_HAS_FORGE_IO_URING_BACKEND AND FORGE_BUILD_TESTS
+            AND FORGE_TEST_ENABLE_FORGE AND FORGE_TEST_ENABLE_FORGE_IO)
+        string(APPEND _forge_io_uring_gate "strict=ON\n")
+        if(FORGE_TEST_HAS_SYSCALL_WRAP)
+            string(APPEND _forge_io_uring_gate "fault=ON\n")
+        endif()
+    endif()
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/ccforge-io-uring-gate.txt" "${_forge_io_uring_gate}")
 else()
     message(STATUS "Forge: Building as subproject")
 endif()

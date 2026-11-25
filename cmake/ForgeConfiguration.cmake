@@ -5,8 +5,24 @@ function(_forge_check_configuration out_var)
     _forge_collect_probe_inputs(_inputs _environment "${CMAKE_CXX_STANDARD}")
     list(APPEND _inputs CMAKE_CXX_STANDARD
         FORGE_ROOT_DIR FORGE_INCLUDE_DIR FORGE_BACKPORT_DIR FORGE_CMAKE_DIR
+        FORGE_ENABLE_EXTENSIONS)
+    set(_extension_options
         FORGE_ENABLE_FORGE_RUNTIME FORGE_ENABLE_FORGE_RESOURCE_POLICY
         FORGE_ENABLE_FORGE_IO FORGE_ENABLE_FORGE_IO_URING)
+    if(FORGE_ENABLE_EXTENSIONS)
+        # The extension module runs after forge::std is ready. Compare the
+        # effective defaults here, before that module declares the options.
+        list(APPEND _inputs ${_extension_options})
+        foreach(_key IN LISTS _extension_options)
+            if(NOT DEFINED ${_key})
+                if(_key MATCHES "^FORGE_ENABLE_FORGE_IO")
+                    set(${_key} AUTO)
+                else()
+                    set(${_key} ON)
+                endif()
+            endif()
+        endforeach()
+    endif()
     foreach(_feature SIMD SENDERS CONSTANT_WRAPPER MDSPAN_PADDED_LAYOUTS SUBMDSPAN LINALG HIVE)
         list(APPEND _inputs FORGE_FORCE_${_feature}_BACKPORT)
     endforeach()
@@ -14,7 +30,9 @@ function(_forge_check_configuration out_var)
         list(APPEND _inputs "environment:${_name}")
     endforeach()
     _forge_collect_backport_probe_sources(_probe_sources)
-    _forge_collect_probe_content(_runtime_content "${_FORGE_CURRENT_LIST_DIR}/forge.cmake")
+    _forge_collect_probe_content(_runtime_content
+        "${_FORGE_CURRENT_LIST_DIR}/forge.cmake"
+        "${FORGE_CMAKE_DIR}/ForgeExtensions.cmake")
     _forge_collect_probe_content(_backport_content
         "${FORGE_CMAKE_DIR}/ForgeBackportProbes.cmake" ${_probe_sources})
     # Keep diagnostics compact while retaining all resolved paths and digests.
@@ -29,6 +47,11 @@ function(_forge_check_configuration out_var)
     set(_payload "")
     set(_differences "")
     foreach(_input IN LISTS _inputs)
+        # Extension settings cannot differ when they apply on just one side.
+        if(_input IN_LIST _extension_options AND (NOT FORGE_ENABLE_EXTENSIONS
+                OR (_previous AND NOT _input IN_LIST _previous_inputs)))
+            continue()
+        endif()
         if(_input MATCHES "^content:(.+)$")
             set(_value "${_content_${CMAKE_MATCH_1}}")
         elseif(_input MATCHES "^environment:(.+)$")
@@ -98,6 +121,11 @@ function(_forge_add_language_guard)
         message(FATAL_ERROR
             "CC Forge could not validate the probe language mode; check the C++ compiler, CMAKE_CXX_STANDARD and probe flags.")
     endif()
+    _forge_apply_language_guard(${ARGN})
+endfunction()
+
+function(_forge_apply_language_guard)
+    set(_header "${CMAKE_BINARY_DIR}/CMakeFiles/CCForgeLanguageGuard.h")
     foreach(_target IN LISTS ARGN)
         set_property(TARGET ${_target} PROPERTY
             FORGE_PROBE_CXX_STANDARD "${CMAKE_CXX_STANDARD}")

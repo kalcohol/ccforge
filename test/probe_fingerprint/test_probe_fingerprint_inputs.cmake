@@ -203,3 +203,36 @@ get_property(_forge_passed_cached CACHE FORGE_B03_PASSED PROPERTY TYPE SET)
 if(_forge_passed_cached)
     message(FATAL_ERROR "A fingerprint change did not invalidate a successful probe")
 endif()
+
+function(_forge_check_configuration_case case)
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" "-DCASE=${case}"
+            -P "${CMAKE_CURRENT_LIST_DIR}/test_configuration_inputs.cmake"
+        RESULT_VARIABLE _result OUTPUT_VARIABLE _out ERROR_VARIABLE _err)
+    if(ARGN)
+        if(NOT _result STREQUAL "1"
+                OR NOT _err MATCHES "CC Forge configuration changed after first inclusion:")
+            message(FATAL_ERROR "Expected a configuration conflict for ${case}:\n${_out}${_err}")
+        endif()
+        string(REGEX MATCHALL "\n +[^ \n]+: '[^'\n]*' -> '[^'\n]*'" _changes "${_err}")
+        string(REGEX REPLACE "\n +" "" _changes "${_changes}")
+        if(NOT "${_changes}" STREQUAL "${ARGN}")
+            message(FATAL_ERROR "Wrong configuration changes for ${case}:\n${_err}")
+        endif()
+    elseif(NOT _result STREQUAL "0")
+        message(FATAL_ERROR "Configuration control ${case} failed:\n${_out}${_err}")
+    endif()
+endfunction()
+
+_forge_check_configuration_case(same_full)
+_forge_check_configuration_case(same_standard_only)
+_forge_check_configuration_case(different_full
+    "FORGE_ENABLE_FORGE_RUNTIME: 'defined:ON' -> 'defined:OFF'"
+    "FORGE_FORCE_SIMD_BACKPORT: 'defined:OFF' -> 'defined:ON'")
+_forge_check_configuration_case(different_local_io
+    "FORGE_ENABLE_FORGE_IO: 'defined:OFF' -> 'defined:AUTO'"
+    "FORGE_ENABLE_FORGE_IO_URING: 'defined:OFF' -> 'defined:AUTO'")
+_forge_check_configuration_case(different_mode_off
+    "FORGE_ENABLE_EXTENSIONS: 'defined:ON' -> 'defined:OFF'")
+_forge_check_configuration_case(different_mode_on
+    "FORGE_ENABLE_EXTENSIONS: 'defined:OFF' -> 'defined:ON'")

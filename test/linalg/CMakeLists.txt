@@ -6,7 +6,7 @@ function(forge_add_linalg_runtime_test target_name source_name test_name)
     forge_add_runtime_test(
         ${target_name}
         "${FORGE_LINALG_RUNTIME_DIR}/${source_name}"
-        ${test_name})
+        ${test_name} ${ARGN})
     if(FORGE_TEST_TBB_LIBRARY)
         target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
     endif()
@@ -16,40 +16,20 @@ function(forge_add_linalg_compile_probe target_name source_name test_name)
     forge_add_compile_probe(
         ${target_name}
         "${FORGE_LINALG_COMPILE_DIR}/${source_name}"
-        ${test_name})
+        ${test_name} ${ARGN})
     if(FORGE_TEST_TBB_LIBRARY)
         target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
     endif()
 endfunction()
 
 function(forge_expect_linalg_cxx_source_compiles result_var source_name should_compile failure_message)
-    set(_FORGE_LINALG_SAVED_CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES}")
-    set(_FORGE_LINALG_SAVED_CMAKE_REQUIRED_DEFINITIONS "${CMAKE_REQUIRED_DEFINITIONS}")
-    set(CMAKE_REQUIRED_INCLUDES "${FORGE_INCLUDE_DIR}")
-    if(FORGE_NEEDS_BACKPORT)
-        list(PREPEND CMAKE_REQUIRED_INCLUDES "${FORGE_BACKPORT_DIR}")
-    endif()
-    foreach(_forge_required_target IN ITEMS forge_std forge)
-        if(TARGET ${_forge_required_target})
-            get_target_property(
-                _forge_target_definitions
-                ${_forge_required_target}
-                INTERFACE_COMPILE_DEFINITIONS)
-            if(_forge_target_definitions)
-                foreach(_forge_definition IN LISTS _forge_target_definitions)
-                    list(APPEND CMAKE_REQUIRED_DEFINITIONS "-D${_forge_definition}")
-                endforeach()
-            endif()
-        endif()
-    endforeach()
+    set(CMAKE_REQUIRED_INCLUDES "")
     forge_expect_cxx_source_compiles(
         ${result_var}
         "${FORGE_LINALG_COMPILE_DIR}/${source_name}"
         ${should_compile}
-        "${failure_message}")
-    set(CMAKE_REQUIRED_INCLUDES "${_FORGE_LINALG_SAVED_CMAKE_REQUIRED_INCLUDES}")
-    set(CMAKE_REQUIRED_DEFINITIONS "${_FORGE_LINALG_SAVED_CMAKE_REQUIRED_DEFINITIONS}")
-    unset(_forge_target_definitions)
+        "${failure_message}"
+        ${ARGN})
 endfunction()
 
 include(CheckCXXSourceCompiles)

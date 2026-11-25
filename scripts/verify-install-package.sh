@@ -7,7 +7,14 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_ROOT="${1:-${REPO_ROOT}/build/install-package}"
+STANDARD_ONLY=0
+DEFAULT_BUILD_ROOT="${REPO_ROOT}/build/install-package"
+if [[ "${1:-}" == "--standard-only" ]]; then
+    STANDARD_ONLY=1
+    DEFAULT_BUILD_ROOT="${REPO_ROOT}/build/install-package-standard"
+    shift
+fi
+BUILD_ROOT="${1:-${DEFAULT_BUILD_ROOT}}"
 STD="${FORGE_INSTALL_CXX_STANDARD:-23}"
 GENERATOR="${FORGE_INSTALL_CMAKE_GENERATOR:-Ninja}"
 CONFIG="${FORGE_INSTALL_CONFIG:-Debug}"
@@ -76,17 +83,111 @@ run_built_executable() {
 run_hive_consumers() {
     local build_dir="$1"
     local prefix="$2"
+    local surface
+    shift 2
     local decision
     decision=$(<"${build_dir}/hive-consumers.txt")
     case "${decision}" in
         ENABLED)
-            run_built_executable "${build_dir}" "${prefix}_hive_std"
-            run_built_executable "${build_dir}" "${prefix}_hive_forge"
+            for surface in "$@"; do
+                run_built_executable "${build_dir}" "${prefix}_hive_${surface}"
+            done
             ;;
         PARTIAL) log "Hive consumers skipped for partial native support" ;;
         *) log "ERROR: missing or invalid Hive consumer decision"; exit 1 ;;
     esac
 }
+
+assert_no_os_probes() {
+    local build_dir="$1"
+    if grep -Eq '^FORGE_(RUNTIME_PROBE_FINGERPRINT|PROBE_LINUX_EPOLL_EVENTFD|PROBE_LINUX_IO_URING|PROBE_WINDOWS_IOCP):' \
+            "${build_dir}/CMakeCache.txt"; then
+        log "ERROR: OS IO probe cache entries found in ${build_dir}"
+        exit 1
+    fi
+}
+
+verify_standard_consumer() {
+    local prefix="$1"
+    local build_dir="$2"
+    shift 2
+    local export_prefix="${build_dir}-prefix"
+    local targets_file="${export_prefix}/lib/cmake/CCForgeInstallConsumer/CCForgeInstallConsumerTargets.cmake"
+    local guard_log="${build_dir}/language-guard-negative.log"
+
+    configure_project "${REPO_ROOT}/test/install_consumer" "${build_dir}" \
+        -DCMAKE_CXX_STANDARD="${STD}" \
+        -DCMAKE_PREFIX_PATH="${prefix}" \
+        -DCCFORGE_EXPECT_STANDARD_ONLY=ON "$@"
+    if ! grep -Fq "CCForge_DIR:PATH=${prefix}/lib/cmake/CCForge" "${build_dir}/CMakeCache.txt"; then
+        log "ERROR: standard-only consumer did not discover the requested prefix"
+        exit 1
+    fi
+    assert_no_os_probes "${build_dir}"
+    build_project "${build_dir}"
+    run_built_executable "${build_dir}" ccforge_install_std_consumer
+    run_hive_consumers "${build_dir}" ccforge_install std
+    install_project "${build_dir}" --prefix "${export_prefix}"
+    if [[ "$(grep -Fc 'INTERFACE_LINK_LIBRARIES "forge::std"' "${targets_file}")" -ne 1 ]] ||
+            grep -Eq 'forge::forge|INTERFACE_LINK_LIBRARIES "(forge|forge_std)"' "${targets_file}" ||
+            grep -Fq "${REPO_ROOT}" "${targets_file}"; then
+        log "ERROR: standard-only consumer export did not preserve only forge::std"
+        exit 1
+    fi
+    if [[ -f "${build_dir}/language-guard-negative.txt" ]]; then
+        if build_project "${build_dir}" --target ccforge_install_guard_mismatch >"${guard_log}" 2>&1 ||
+                ! grep -Fq "CC Forge language standard mismatch" "${guard_log}"; then
+            log "ERROR: expected a language guard rejection; see ${guard_log}"
+            exit 1
+        fi
+    else
+        log "verified language guard usage requirements (C++23 to C++26 mismatch control unavailable)"
+    fi
+}
+
+verify_standard_only_package() {
+    local source_dir="${BUILD_ROOT}/standard-source"
+    local build_dir="${BUILD_ROOT}/standard-build"
+    local prefix="${BUILD_ROOT}/standard-prefix"
+    local relocated_prefix="${BUILD_ROOT}/relocated-standard-prefix"
+    local rejection_log="${BUILD_ROOT}/standard-reject-extensions.log"
+
+    log "staging the package source without include/forge"
+    mkdir -p "${source_dir}"
+    cp -R "${REPO_ROOT}/CMakeLists.txt" "${REPO_ROOT}/forge.cmake" \
+        "${REPO_ROOT}/cmake" "${REPO_ROOT}/backport" "${source_dir}/"
+    configure_project "${source_dir}" "${build_dir}" \
+        -DCMAKE_CXX_STANDARD="${STD}" \
+        -DFORGE_ENABLE_EXTENSIONS=OFF -DFORGE_ENABLE_INSTALL=ON \
+        -DFORGE_BUILD_EXAMPLES=OFF -DFORGE_BUILD_TESTS=OFF \
+        -DCMAKE_INSTALL_PREFIX="${prefix}" -DCMAKE_INSTALL_LIBDIR=lib
+    assert_no_os_probes "${build_dir}"
+    build_project "${build_dir}"
+    install_project "${build_dir}"
+    if [[ -e "${prefix}/include" ]] ||
+            [[ ! -f "${prefix}/lib/cmake/CCForge/ForgeExtensions.cmake" ]]; then
+        log "ERROR: standard-only install must omit extension headers and retain CMake helpers"
+        exit 1
+    fi
+    mv "${prefix}" "${relocated_prefix}"
+    log "consuming the relocated standard-only prefix with the default mode"
+    verify_standard_consumer "${relocated_prefix}" "${BUILD_ROOT}/standard-consumer-build"
+
+    log "checking that a standard-only prefix rejects an explicit extension request"
+    if configure_project "${REPO_ROOT}/test/install_consumer" "${BUILD_ROOT}/standard-reject-build" \
+            -DCMAKE_CXX_STANDARD="${STD}" -DCMAKE_PREFIX_PATH="${relocated_prefix}" \
+            -DFORGE_ENABLE_EXTENSIONS=ON >"${rejection_log}" 2>&1 ||
+            ! grep -Fq 'FORGE_ENABLE_EXTENSIONS=ON requires the CC Forge extension headers' "${rejection_log}"; then
+        log "ERROR: expected a missing extension headers diagnostic; see ${rejection_log}"
+        exit 1
+    fi
+}
+
+if [[ "${STANDARD_ONLY}" == "1" ]]; then
+    verify_standard_only_package
+    log "ok"
+    exit 0
+fi
 
 verify_source_consumer() {
     local mode="$1"
@@ -104,7 +205,7 @@ verify_source_consumer() {
 
     log "running source consumer in ${mode} mode"
     run_built_executable "${build_dir}" ccforge_source_consumer
-    run_hive_consumers "${build_dir}" ccforge_source
+    run_hive_consumers "${build_dir}" ccforge_source std forge
 
     log "installing source consumer export set in ${mode} mode"
     install_project "${build_dir}" --prefix "${install_dir}"
@@ -156,7 +257,7 @@ configure_project "${REPO_ROOT}" "${FORGE_BUILD}" \
     -DFORGE_BUILD_EXAMPLES=OFF \
     -DFORGE_BUILD_TESTS=OFF \
     -DFORGE_ENABLE_INSTALL=ON \
-    -DCMAKE_INSTALL_PREFIX="${PREFIX}"
+    -DCMAKE_INSTALL_PREFIX="${PREFIX}" -DCMAKE_INSTALL_LIBDIR=lib
 
 log "building Forge package build"
 build_project "${FORGE_BUILD}"
@@ -193,6 +294,11 @@ install_project "${CONSUMER_BUILD}" --prefix "${CONSUMER_PREFIX}"
 log "running external consumer"
 run_built_executable "${CONSUMER_BUILD}" ccforge_install_consumer
 run_built_executable "${CONSUMER_BUILD}" ccforge_install_std_consumer
-run_hive_consumers "${CONSUMER_BUILD}" ccforge_install
+run_hive_consumers "${CONSUMER_BUILD}" ccforge_install std forge
+
+log "consuming the full prefix with extensions disabled"
+verify_standard_consumer "${PREFIX}" "${BUILD_ROOT}/full-prefix-standard-consumer-build" \
+    -DFORGE_ENABLE_EXTENSIONS=OFF
+verify_standard_only_package
 
 log "ok"

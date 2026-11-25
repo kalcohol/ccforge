@@ -7,6 +7,10 @@ cmake -S . -B build/package -DCMAKE_CXX_STANDARD=26 -DFORGE_ENABLE_INSTALL=ON -D
 cmake --install build/package --prefix /tmp/ccforge-install
 ```
 
+只发布标准接口时，配置加上 `-DFORGE_ENABLE_EXTENSIONS=OFF`，并使用新的安装前缀。
+该安装不复制扩展头文件。消费者默认只得到 `forge::std`，显式要求
+`FORGE_ENABLE_EXTENSIONS=ON` 会报告扩展头文件缺失。
+
 从仍提供旧版 `unique_resource` 包装头的 Forge 版本升级时，请先清理现有安装前缀，
 或使用新的安装前缀。覆盖安装会留下旧版 Forge 的 `memory` 和 `experimental/` 头文件。
 迁移方式见 [Unique resource](forge-utilities.md#unique-resource)。
@@ -35,6 +39,7 @@ fingerprint 同时记录 toolchain 与 probe 头文件内容摘要，路径不�
 | 选项 | 用途 |
 | --- | --- |
 | `FORGE_ENABLE_INSTALL` | 生成安装规则与 CMake package |
+| `FORGE_ENABLE_EXTENSIONS` | 有 `include/forge` 时默认 ON。OFF 时不生成 `forge::forge`、不运行平台 IO probe、不安装扩展头 |
 | `FORGE_INSTALL_CMAKEDIR` | package config 与 probe 的安装目录 |
 | `FORGE_INSTALL_BACKPORTDIR` | backport headers 的安装目录 |
 | `FORGE_ENABLE_FORGE_RUNTIME` | 仅控制 runtime 示例，不控制头文件或 runtime 测试 |

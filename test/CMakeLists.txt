@@ -15,7 +15,7 @@ option(FORGE_TEST_ENABLE_FORGE_ERASURE "Build Forge erasure extension tests" ON)
 option(FORGE_TEST_ENABLE_NATIVE_HANDOFF "Build Forge native handoff tests" ON)
 
 set(FORGE_TEST_ENABLE_ANY_FORGE OFF)
-if(FORGE_TEST_ENABLE_FORGE
+if(FORGE_ENABLE_EXTENSIONS AND FORGE_TEST_ENABLE_FORGE
         AND (FORGE_TEST_ENABLE_FORGE_RUNTIME
             OR (FORGE_ENABLE_FORGE_RESOURCE_POLICY
                 AND FORGE_TEST_ENABLE_FORGE_RESOURCE)
@@ -24,15 +24,21 @@ if(FORGE_TEST_ENABLE_FORGE
     set(FORGE_TEST_ENABLE_ANY_FORGE ON)
 endif()
 
-if(FORGE_TEST_ENABLE_EXECUTION
+# Keep the mixed test groups on the full target until their P0-3–P0-6
+# migration. The already independent Hive and std-target checks can run here.
+set(_forge_test_enable_full_groups OFF)
+if(FORGE_ENABLE_EXTENSIONS AND (FORGE_TEST_ENABLE_EXECUTION
         OR FORGE_TEST_ENABLE_SIMD
         OR FORGE_TEST_ENABLE_CONSTANT_WRAPPER
         OR FORGE_TEST_ENABLE_UNIQUE_RESOURCE
         OR FORGE_TEST_ENABLE_SUBMDSPAN
         OR FORGE_TEST_ENABLE_LINALG
-        OR FORGE_TEST_ENABLE_HIVE
-        OR FORGE_TEST_ENABLE_ANY_FORGE
-        OR FORGE_TEST_ENABLE_NATIVE_HANDOFF)
+        OR FORGE_TEST_ENABLE_NATIVE_HANDOFF))
+    set(_forge_test_enable_full_groups ON)
+endif()
+
+if(_forge_test_enable_full_groups OR FORGE_TEST_ENABLE_HIVE
+        OR FORGE_TEST_ENABLE_ANY_FORGE)
     set(_FORGE_GTEST_SOURCE_DIR
         "${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/googletest")
     if(NOT EXISTS "${_FORGE_GTEST_SOURCE_DIR}/CMakeLists.txt")
@@ -139,11 +145,19 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang|Zig)$")
     set(_forge_rejection_compile_options -w)
 endif()
 
-function(forge_detect_cxx_source_compiles result_var source_file)
+include("${CMAKE_CURRENT_SOURCE_DIR}/TestOwner.cmake")
+
+function(_forge_detect_cxx_source_compiles result_var source_file)
     unset(${result_var} CACHE)
     unset(${result_var})
     file(READ "${source_file}" _forge_probe_source)
     check_cxx_source_compiles("${_forge_probe_source}" ${result_var})
+    set(${result_var} "${${result_var}}" PARENT_SCOPE)
+endfunction()
+
+function(forge_detect_cxx_source_compiles result_var source_file)
+    _forge_prepare_test_probe(${ARGN})
+    _forge_detect_cxx_source_compiles(${result_var} "${source_file}")
     set(${result_var} "${${result_var}}" PARENT_SCOPE)
 endfunction()
 
@@ -175,6 +189,7 @@ function(forge_check_rejection_warning_control)
 endfunction()
 
 function(forge_expect_cxx_source_compiles result_var source_file should_compile failure_message)
+    _forge_prepare_test_probe(${ARGN})
     if(MSVC AND NOT CMAKE_REQUIRED_FLAGS MATCHES "(^| )/Zc:__cplusplus($| )")
         set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /Zc:__cplusplus")
     endif()
@@ -190,7 +205,7 @@ function(forge_expect_cxx_source_compiles result_var source_file should_compile 
             forge_check_rejection_warning_control()
         endif()
     endif()
-    forge_detect_cxx_source_compiles(${result_var} "${source_file}")
+    _forge_detect_cxx_source_compiles(${result_var} "${source_file}")
 
     if(${should_compile})
         if(NOT ${result_var})
@@ -204,13 +219,10 @@ function(forge_expect_cxx_source_compiles result_var source_file should_compile 
 endfunction()
 
 function(forge_add_runtime_test target_name source_file)
-    set(test_name "${target_name}")
-    if(ARGC GREATER 2)
-        set(test_name "${ARGV2}")
-    endif()
+    _forge_test_registration(test_name owner_target "${target_name}" ${ARGN})
 
     add_executable(${target_name} ${source_file})
-    target_link_libraries(${target_name} PRIVATE gtest_main forge::forge)
+    target_link_libraries(${target_name} PRIVATE gtest_main ${owner_target})
     add_test(NAME ${test_name} COMMAND ${target_name})
     set_tests_properties(${test_name} PROPERTIES TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endfunction()
@@ -219,7 +231,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/CompileProbe.cmake")
 
 find_library(FORGE_TEST_TBB_LIBRARY NAMES tbb)
 
-if(FORGE_TEST_ENABLE_EXECUTION)
+if(FORGE_ENABLE_EXTENSIONS AND FORGE_TEST_ENABLE_EXECUTION)
     if(FORGE_FORCE_SENDERS_BACKPORT
             OR (NOT FORGE_SENDERS_FULL AND NOT FORGE_SENDERS_PARTIAL))
         add_subdirectory(execution)
@@ -228,14 +240,14 @@ if(FORGE_TEST_ENABLE_EXECUTION)
             "Forge: execution backport conformance tests skipped because the native standard library stands aside")
     endif()
 endif()
-if(FORGE_TEST_ENABLE_SIMD)
+if(FORGE_ENABLE_EXTENSIONS AND FORGE_TEST_ENABLE_SIMD)
     set(_forge_simd_aliases_available TRUE)
     if(NOT FORGE_FORCE_SIMD_BACKPORT AND (FORGE_SIMD_FULL OR FORGE_SIMD_PARTIAL))
         # Probe the actual test surface, including traits, on partial natives.
         # Reuse the source so this gate stays in step with its requirements.
         set(_forge_simd_saved_includes "${CMAKE_REQUIRED_INCLUDES}")
         set(CMAKE_REQUIRED_INCLUDES "${CMAKE_SOURCE_DIR}/include")
-        forge_detect_cxx_source_compiles(FORGE_SIMD_FORGE_ALIASES_AVAILABLE
+        _forge_detect_cxx_source_compiles(FORGE_SIMD_FORGE_ALIASES_AVAILABLE
             "${CMAKE_CURRENT_SOURCE_DIR}/simd/compile/test_simd_forge_aliases.cpp")
         set(CMAKE_REQUIRED_INCLUDES "${_forge_simd_saved_includes}")
         unset(_forge_simd_saved_includes)
@@ -260,7 +272,7 @@ if(FORGE_TEST_ENABLE_SIMD)
             "Forge: SIMD backport conformance tests skipped because the native standard library stands aside")
     endif()
 endif()
-if(FORGE_TEST_ENABLE_CONSTANT_WRAPPER)
+if(FORGE_ENABLE_EXTENSIONS AND FORGE_TEST_ENABLE_CONSTANT_WRAPPER)
     if(FORGE_FORCE_CONSTANT_WRAPPER_BACKPORT
             OR FORGE_CONSTANT_WRAPPER_FULL
             OR NOT FORGE_CONSTANT_WRAPPER_PARTIAL)
@@ -270,10 +282,10 @@ if(FORGE_TEST_ENABLE_CONSTANT_WRAPPER)
             "Forge: constant_wrapper conformance tests skipped for partial-native standard library")
     endif()
 endif()
-if(FORGE_TEST_ENABLE_UNIQUE_RESOURCE)
+if(FORGE_ENABLE_EXTENSIONS AND FORGE_TEST_ENABLE_UNIQUE_RESOURCE)
     add_subdirectory(unique_resource)
 endif()
-if(FORGE_TEST_ENABLE_SUBMDSPAN)
+if(FORGE_ENABLE_EXTENSIONS AND FORGE_TEST_ENABLE_SUBMDSPAN)
     # Keep portable native tests enabled; gate implementation probes separately.
     add_test(
         NAME submdspan_test_gate_matrix
@@ -288,7 +300,7 @@ if(FORGE_TEST_ENABLE_SUBMDSPAN)
         TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
     add_subdirectory(submdspan)
 endif()
-if(FORGE_TEST_ENABLE_LINALG)
+if(FORGE_ENABLE_EXTENSIONS AND FORGE_TEST_ENABLE_LINALG)
     add_subdirectory(linalg)
 endif()
 if(FORGE_TEST_ENABLE_HIVE)
@@ -300,6 +312,6 @@ endif()
 if(FORGE_TEST_ENABLE_ANY_FORGE)
     add_subdirectory(forge)
 endif()
-if(FORGE_TEST_ENABLE_NATIVE_HANDOFF)
+if(FORGE_ENABLE_EXTENSIONS AND FORGE_TEST_ENABLE_NATIVE_HANDOFF)
     add_subdirectory(native_handoff)
 endif()

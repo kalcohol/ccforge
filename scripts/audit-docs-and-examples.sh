@@ -302,14 +302,14 @@ check_feature_gate_docs() {
     documented="${audit_tmp}/documented-feature-options"
 
     sed -n -E \
-        's/^(option|_forge_define_tristate_option)\((FORGE_ENABLE_FORGE_[A-Z_]+).*/\2/p' \
-        forge.cmake | sort -u >"${declared}"
-    { rg --no-filename -o 'FORGE_ENABLE_FORGE_[A-Z_]+' docs/testing.md docs/install-options.md || true; } |
+        's/^(option|_forge_define_tristate_option)\((FORGE_ENABLE_(EXTENSIONS|FORGE_[A-Z_]+)).*/\2/p' \
+        forge.cmake cmake/ForgeExtensions.cmake | sort -u >"${declared}"
+    { rg --no-filename -o 'FORGE_ENABLE_(EXTENSIONS|FORGE_[A-Z_]+)' docs/testing.md docs/install-options.md || true; } |
         sort -u >"${documented}"
 
     if ! cmp -s "${declared}" "${documented}"; then
         diff -u "${declared}" "${documented}" >&2 || true
-        fail "docs/testing.md Forge feature gates differ from forge.cmake"
+        fail "documented Forge feature gates differ from forge.cmake and ForgeExtensions.cmake"
     fi
 
 }

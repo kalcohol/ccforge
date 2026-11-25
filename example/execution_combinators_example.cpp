@@ -20,13 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Demonstrates: when_all, cached split, bulk and scoped spawn; backport-only spelling
-// Key APIs: std::execution::when_all, std::execution::just, forge::split, forge::bulk, std::execution::then
-// Requires: injected backport only; backport-only spelling; C++23
+// Demonstrates: combining sender results and scoped spawn
+// Key APIs: std::execution::when_all, std::execution::just, std::execution::spawn, std::execution::simple_counting_scope
+// Requires: standard senders via the injected backport or complete native support; C++23
 // See also: docs/backports/execution.md
 
-#include <forge/bulk.hpp>
-#include <forge/split.hpp>
 #include <execution>
 #include "example_support.hpp"
 #include <tuple>
@@ -41,22 +39,6 @@ int main() {
     auto [a, b] = *result;
     forge_example::require(a == 42);
     forge_example::require(b > 3.0);
-
-    // split: reuse a single sender result
-    auto shared = forge::split(ex::just(100) | ex::then([](int x) { return x * 2; }));
-    auto first_shared = std::this_thread::sync_wait(shared);
-    auto second_shared = std::this_thread::sync_wait(shared);
-    forge_example::require(first_shared.has_value());
-    forge_example::require(second_shared.has_value());
-    forge_example::require(std::get<0>(*first_shared) == 200);
-    forge_example::require(std::get<0>(*second_shared) == 200);
-
-    // bulk: serial iteration
-    int sum = 0;
-    auto bulk_work = ex::just(0) | forge::bulk(5, [&sum](int i, int&) { sum += i; });
-    auto bulk_result = std::this_thread::sync_wait(std::move(bulk_work));
-    forge_example::require(bulk_result.has_value());
-    forge_example::require(sum == 0+1+2+3+4);
 
     // spawn: fire and forget under a scope token
     ex::simple_counting_scope scope;

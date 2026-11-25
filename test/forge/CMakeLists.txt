@@ -8,7 +8,7 @@ function(forge_add_forge_test target_name source_name test_name)
     forge_add_runtime_test(
         ${target_name}
         "${FORGE_RUNTIME_DIR}/${source_name}"
-        ${test_name})
+        ${test_name} ${ARGN})
     target_link_libraries(${target_name} PRIVATE Threads::Threads)
     if(FORGE_TEST_TBB_LIBRARY)
         target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
@@ -19,7 +19,7 @@ function(forge_add_forge_compile_probe target_name source_name test_name)
     forge_add_compile_probe(
         ${target_name}
         "${FORGE_COMPILE_DIR}/${source_name}"
-        ${test_name})
+        ${test_name} ${ARGN})
     target_link_libraries(${target_name} PRIVATE Threads::Threads)
     if(FORGE_TEST_TBB_LIBRARY)
         target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
@@ -27,35 +27,13 @@ function(forge_add_forge_compile_probe target_name source_name test_name)
 endfunction()
 
 function(forge_expect_forge_cxx_source_compiles result_var source_name should_compile failure_message)
-    set(_forge_saved_required_includes "${CMAKE_REQUIRED_INCLUDES}")
-    set(_forge_saved_required_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
-    set(CMAKE_REQUIRED_INCLUDES "${FORGE_INCLUDE_DIR}")
-    if(FORGE_NEEDS_BACKPORT)
-        list(APPEND CMAKE_REQUIRED_INCLUDES "${FORGE_BACKPORT_DIR}")
-    endif()
-    foreach(_forge_required_target IN ITEMS forge_std forge)
-        if(TARGET ${_forge_required_target})
-            get_target_property(
-                _forge_target_definitions
-                ${_forge_required_target}
-                INTERFACE_COMPILE_DEFINITIONS)
-            if(_forge_target_definitions)
-                foreach(_forge_definition IN LISTS _forge_target_definitions)
-                    list(APPEND CMAKE_REQUIRED_DEFINITIONS "-D${_forge_definition}")
-                endforeach()
-            endif()
-        endif()
-    endforeach()
+    set(CMAKE_REQUIRED_INCLUDES "")
     forge_expect_cxx_source_compiles(
         ${result_var}
         "${FORGE_COMPILE_DIR}/${source_name}"
         ${should_compile}
-        "${failure_message}")
-    set(CMAKE_REQUIRED_INCLUDES "${_forge_saved_required_includes}")
-    set(CMAKE_REQUIRED_DEFINITIONS "${_forge_saved_required_definitions}")
-    unset(_forge_saved_required_includes)
-    unset(_forge_saved_required_definitions)
-    unset(_forge_target_definitions)
+        "${failure_message}"
+        ${ARGN})
 endfunction()
 
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME

@@ -2,10 +2,14 @@
 
 Forge 的核心设计目标：**当未来标准库原生提供相同能力后，下游升级工具链时无需任何源码修改即可自动切换到原生实现。**
 
-CMake 层面有两个入口：`forge::std` 只暴露标准头 backport / native stand-aside
+CMake 通过同一个 `forge.cmake` 入口配置两个 target。`forge::std` 只暴露标准头 backport / native stand-aside
 surface；`forge::forge` 在此基础上再加入 `include/forge` 的非标准扩展设施。
 只需要 `<execution>`、`<simd>`、`<mdspan>` 等标准入口的 consumer 应优先链接
 `forge::std`。
+
+`FORGE_ENABLE_EXTENSIONS` 默认取决于源码树或安装前缀中是否有扩展头文件目录。
+设为 `OFF` 时只创建标准头 target，不加载扩展模块或运行平台 IO probe。该选项
+与语言模式和 force flags 共用一个配置指纹，因此同一次 configure 中重复引入时须一致。
 
 ## 工具链原生进度（固定验证镜像，最后核对 2026-11-13）
 

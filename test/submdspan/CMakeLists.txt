@@ -3,50 +3,30 @@ set(FORGE_SUBMDSPAN_RUNTIME_DIR "${FORGE_SUBMDSPAN_TEST_ROOT}/runtime")
 set(FORGE_SUBMDSPAN_COMPILE_DIR "${FORGE_SUBMDSPAN_TEST_ROOT}/compile")
 
 function(forge_check_submdspan_cxx_source_compiles result_var source_file)
-    set(CMAKE_REQUIRED_INCLUDES "${FORGE_INCLUDE_DIR}")
-    if(FORGE_NEEDS_BACKPORT)
-        list(PREPEND CMAKE_REQUIRED_INCLUDES "${FORGE_BACKPORT_DIR}")
+    set(CMAKE_REQUIRED_INCLUDES "")
+    if(MSVC AND NOT CMAKE_REQUIRED_FLAGS MATCHES "(^| )/Zc:__cplusplus($| )")
+        set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /Zc:__cplusplus")
     endif()
-    foreach(_forge_required_target IN ITEMS forge_std forge)
-        if(TARGET ${_forge_required_target})
-            get_target_property(
-                _forge_target_definitions
-                ${_forge_required_target}
-                INTERFACE_COMPILE_DEFINITIONS)
-            if(_forge_target_definitions)
-                foreach(_forge_definition IN LISTS _forge_target_definitions)
-                    list(APPEND CMAKE_REQUIRED_DEFINITIONS "-D${_forge_definition}")
-                endforeach()
-            endif()
-        endif()
-    endforeach()
-    if(ARGC GREATER 2)
-        forge_expect_cxx_source_compiles(
-            ${result_var} "${source_file}" ${ARGV2} "${ARGV3}")
-        get_property(_forge_probe_result CACHE ${result_var} PROPERTY VALUE)
-    else()
-        if(MSVC AND NOT CMAKE_REQUIRED_FLAGS MATCHES "(^| )/Zc:__cplusplus($| )")
-            set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /Zc:__cplusplus")
-        endif()
-        forge_detect_cxx_source_compiles(${result_var} "${source_file}")
-        set(_forge_probe_result "${${result_var}}")
-    endif()
-    set(${result_var} "${_forge_probe_result}" PARENT_SCOPE)
+    forge_detect_cxx_source_compiles(${result_var} "${source_file}" ${ARGN})
+    set(${result_var} "${${result_var}}" PARENT_SCOPE)
 endfunction()
 
 function(forge_expect_submdspan_cxx_source_compiles result_var source_name should_compile failure_message)
-    forge_check_submdspan_cxx_source_compiles(
+    set(CMAKE_REQUIRED_INCLUDES "")
+    forge_expect_cxx_source_compiles(
         ${result_var}
         "${FORGE_SUBMDSPAN_COMPILE_DIR}/${source_name}"
         ${should_compile}
-        "${failure_message}")
-    set(${result_var} "${${result_var}}" PARENT_SCOPE)
+        "${failure_message}"
+        ${ARGN})
+    get_property(_forge_probe_result CACHE ${result_var} PROPERTY VALUE)
+    set(${result_var} "${_forge_probe_result}" PARENT_SCOPE)
 endfunction()
 
 function(forge_expect_submdspan_positive_control result_var source_name failure_message)
     list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_SUBMDSPAN_POSITIVE_CONTROL=1)
     forge_expect_submdspan_cxx_source_compiles(
-        ${result_var} "${source_name}" ON "${failure_message}")
+        ${result_var} "${source_name}" ON "${failure_message}" ${ARGN})
 endfunction()
 
 # Runtime tests require <mdspan> to be available.

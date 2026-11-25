@@ -574,7 +574,8 @@ COMMON-DOMAIN 检查完整的 common type 默认构造表达式，不可构造�
 
 - [execution_affine_example.cpp](../../example/execution_affine_example.cpp)：execution affine 的接口组合与完成结果。
 
-- [execution_combinators_example.cpp](../../example/execution_combinators_example.cpp)：when_all、结果复用、bulk 与 scope spawn（Forge 扩展拼写）。
+- [execution_combinators_example.cpp](../../example/execution_combinators_example.cpp)：用标准接口 when_all 合并结果，并在计数 scope 中 spawn。
+- [forge_execution_combinators_example.cpp](../../example/forge_execution_combinators_example.cpp)：用 Forge 扩展 split 复用结果，并在 bulk 可用时演示串行迭代。
 
 - [execution_coro_example.cpp](../../example/execution_coro_example.cpp)：execution coro 的接口组合与完成结果。
 
