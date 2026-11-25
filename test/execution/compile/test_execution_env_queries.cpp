@@ -235,6 +235,21 @@ static_assert(answers<ex::env<stop_prop, alloc_prop, sched_prop>, std::get_alloc
 static_assert(answers<ex::env<stop_prop, alloc_prop, sched_prop>, ex::get_start_scheduler_t>);
 static_assert(answers<alloc_prop, std::get_allocator_t, int>);
 static_assert(!answers<alloc_prop, missing>);
+constexpr bool forwarded_scheduler_allocator() {
+    std::allocator<int> ordinary;
+    std::allocator<long> scheduler;
+    auto base = ex::env{ex::prop{std::get_allocator, std::ref(ordinary)}};
+    auto base_view = ex::__forge_env_detail::__fwd_env_view<decltype(base)>::__borrow(base);
+    static_assert(!answers<decltype(base_view), std::get_scheduler_allocator_t>);
+    auto overlay = ex::env{base_view, ex::prop{std::get_scheduler_allocator, std::ref(scheduler)}};
+    auto view = ex::__forge_env_detail::__fwd_env_view<decltype(overlay)>::__borrow(overlay);
+    static_assert(std::same_as<decltype(std::get_allocator(view)), std::allocator<int>&>);
+    static_assert(std::same_as<decltype(std::get_scheduler_allocator(view)), std::allocator<long>&>);
+    return &std::get_scheduler_allocator(base_view) == &ordinary &&
+        &std::get_allocator(view) == &ordinary &&
+        &std::get_scheduler_allocator(view) == &scheduler;
+}
+static_assert(forwarded_scheduler_allocator());
 constexpr bool borrowed_prop() {
     int n = 1;
     auto p = ex::prop{key{}, std::ref(n)};

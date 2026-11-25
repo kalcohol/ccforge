@@ -1,0 +1,8 @@
+#pragma once
+
+namespace std {
+
+struct synthetic_scheduler_allocator {};
+inline constexpr synthetic_scheduler_allocator get_scheduler_allocator{};
+
+} // namespace std

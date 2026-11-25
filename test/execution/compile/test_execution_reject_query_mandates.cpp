@@ -213,5 +213,30 @@ int main() {
 #else
     [[maybe_unused]] constexpr bool evaluated = answers_query<connected, default_classified>;
 #endif
+#elif FORGE_QUERY_CASE >= 37 && FORGE_QUERY_CASE <= 39
+    using alloc = std::allocator<int>;
+#if FORGE_QUERY_CASE == 37
+    // A throwing preferred answer is ill-formed even with a valid fallback.
+    const auto env = ex::env{
+        environment<std::get_scheduler_allocator_t, alloc, FORGE_QUERY_POSITIVE>{},
+        environment<std::get_allocator_t, alloc, true>{}};
+#elif FORGE_QUERY_CASE == 38
+    const auto env = environment<std::get_allocator_t, alloc, FORGE_QUERY_POSITIVE>{};
+#else
+    using result = std::conditional_t<FORGE_QUERY_POSITIVE, alloc, int>;
+    const auto env = ex::env{
+        environment<std::get_scheduler_allocator_t, result, true>{},
+        environment<std::get_allocator_t, alloc, true>{}};
+#endif
+#if FORGE_QUERY_POSITIVE
+    std::get_scheduler_allocator(env);
+#else
+    // Removing the CPO by constraint substitution must make this probe compile.
+    [](const auto& candidate) {
+        if constexpr (requires { std::get_scheduler_allocator(candidate); }) {
+            std::get_scheduler_allocator(candidate);
+        }
+    }(env);
+#endif
 #endif
 }

@@ -9,6 +9,16 @@ endif()
 if(NOT DEFINED GENERATOR OR GENERATOR STREQUAL "")
     set(GENERATOR "Ninja")
 endif()
+if(NOT DEFINED SENDERS_CASE)
+    set(SENDERS_CASE complete)
+endif()
+if(SENDERS_CASE STREQUAL "complete")
+    set(expected_probe COMPLETE)
+elseif(SENDERS_CASE STREQUAL "missing_scheduler_allocator")
+    set(expected_probe PARTIAL)
+else()
+    message(FATAL_ERROR "Unknown senders fixture case: ${SENDERS_CASE}")
+endif()
 
 set(configure_args
     "${CMAKE_COMMAND}"
@@ -16,6 +26,7 @@ set(configure_args
     -S "${SOURCE_DIR}"
     -B "${BINARY_DIR}"
     -DCMAKE_CXX_STANDARD=${CXX_STANDARD}
+    -DSENDERS_CASE=${SENDERS_CASE}
     -DFORGE_ROOT_DIR=${FORGE_ROOT_DIR})
 if(DEFINED CXX_COMPILER AND NOT CXX_COMPILER STREQUAL "")
     list(APPEND configure_args "-DCMAKE_CXX_COMPILER=${CXX_COMPILER}")
@@ -33,11 +44,11 @@ execute_process(
 set(configure_log "${configure_output}\n${configure_error}")
 if(NOT configure_result EQUAL 0)
     message(FATAL_ERROR
-        "complete senders fixture configure failed:\n${configure_log}")
+        "${SENDERS_CASE} senders fixture configure failed:\n${configure_log}")
 endif()
-if(NOT configure_log MATCHES "CC Forge probe: SENDERS=COMPLETE")
+if(NOT configure_log MATCHES "CC Forge probe: SENDERS=${expected_probe}")
     message(FATAL_ERROR
-        "complete senders fixture was not classified COMPLETE:\n${configure_log}")
+        "${SENDERS_CASE} senders fixture was not classified ${expected_probe}:\n${configure_log}")
 endif()
 
 execute_process(
@@ -47,5 +58,5 @@ execute_process(
     ERROR_VARIABLE build_error)
 if(NOT build_result EQUAL 0)
     message(FATAL_ERROR
-        "complete senders fixture build failed:\n${build_output}\n${build_error}")
+        "${SENDERS_CASE} senders fixture build failed:\n${build_output}\n${build_error}")
 endif()

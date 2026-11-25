@@ -16,6 +16,19 @@ namespace std {
 template<class Type>
 concept queryable = destructible<Type>;
 
+#ifndef FORGE_TEST_OMIT_SCHEDULER_ALLOCATOR
+struct get_scheduler_allocator_t {
+    template<class Env>
+    constexpr decltype(auto) operator()(const Env& env) const noexcept;
+};
+inline constexpr get_scheduler_allocator_t get_scheduler_allocator{};
+
+template<class Env>
+constexpr decltype(auto) get_scheduler_allocator_t::operator()(const Env& env) const noexcept {
+    return env.query(std::get_scheduler_allocator);
+}
+#endif
+
 } // namespace std
 
 namespace std::execution {

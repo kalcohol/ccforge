@@ -4,7 +4,17 @@
 #include <stop_token>
 
 #ifndef FORGE_HAS_NATIVE_SENDERS
-#error The complete senders fixture must select native stand-aside.
+#error The senders fixture must select native stand-aside.
+#endif
+#ifndef FORGE_NATIVE_SENDERS_COMPLETE
+#error The senders fixture must report the native completeness result.
+#endif
+
+#ifdef FORGE_TEST_OMIT_SCHEDULER_ALLOCATOR
+static_assert(FORGE_NATIVE_SENDERS_COMPLETE == 0);
+#else
+static_assert(FORGE_NATIVE_SENDERS_COMPLETE == 1);
+static_assert(std::same_as<decltype(std::get_scheduler_allocator), const std::get_scheduler_allocator_t>);
 #endif
 
 int main() {

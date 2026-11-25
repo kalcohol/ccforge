@@ -3,6 +3,7 @@
 #include <forge/execution_extensions.hpp>
 #include "cpp26/execution.hpp"
 #include "../scheduler_fixture.hpp"
+#include <functional>
 #include <memory>
 
 namespace ex = std::execution;
@@ -149,12 +150,66 @@ constexpr bool query_constants() {
         std::get_allocator(e) == std::allocator<int>{};
 }
 static_assert(query_constants());
+struct allocator_queries {
+    std::allocator<int> ordinary;
+    std::allocator<long> scheduler;
+
+    constexpr const std::allocator<int>& query(std::get_allocator_t) const & noexcept(false) {
+        return ordinary;
+    }
+    constexpr const std::allocator<long>& query(std::get_scheduler_allocator_t) const & noexcept {
+        return scheduler;
+    }
+    void query(std::get_scheduler_allocator_t) & = delete;
+};
+constexpr bool scheduler_allocator_queries() {
+    allocator_queries e{};
+    auto fallback = ex::prop{std::get_allocator, std::cref(e.ordinary)};
+    static_assert(std::same_as<decltype(std::get_scheduler_allocator(e)), const std::allocator<long>&>);
+    static_assert(std::same_as<decltype(std::get_scheduler_allocator(fallback)), const std::allocator<int>&>);
+    static_assert(noexcept(std::get_scheduler_allocator(e)));
+    static_assert(noexcept(std::get_scheduler_allocator(fallback)));
+    return &std::get_scheduler_allocator(e) == &e.scheduler &&
+        &std::get_scheduler_allocator(fallback) == &e.ordinary;
+}
+static_assert(scheduler_allocator_queries());
+static_assert(std::forwarding_query(std::get_scheduler_allocator));
+static_assert(!std::invocable<std::get_scheduler_allocator_t, ex::env<>>);
+struct value_allocator_query {
+    constexpr std::allocator<int> query(std::get_scheduler_allocator_t) const noexcept { return {}; }
+};
+static_assert(std::same_as<decltype(std::get_scheduler_allocator(value_allocator_query{})), std::allocator<int>>);
+template<class Tag>
+struct allocator_tag_address {
+    const Tag* tag;
+
+    consteval allocator_tag_address(const Tag& query) noexcept : tag(&query) {}
+};
+template<const auto& Query>
+struct allocator_address_env {
+    using tag_t = std::remove_cvref_t<decltype(Query)>;
+    std::allocator<int> allocator;
+    std::allocator<int> other_allocator;
+
+    constexpr const std::allocator<int>& query(allocator_tag_address<tag_t> address) const noexcept {
+        return address.tag == &Query ? allocator : other_allocator;
+    }
+};
+// This function must also accept runtime environments, so the CPO cannot be immediate.
+constexpr bool scheduler_allocator_global_tags(
+    const allocator_address_env<std::get_scheduler_allocator>& preferred,
+    const allocator_address_env<std::get_allocator>& fallback) {
+    return &std::get_scheduler_allocator(preferred) == &preferred.allocator &&
+        &std::get_scheduler_allocator(fallback) == &fallback.allocator;
+}
+static_assert(scheduler_allocator_global_tags({}, {}));
 static_assert(std::same_as<decltype(ex::get_domain(ex::env<>{})), ex::default_domain>);
 constexpr auto empty_domain = ex::get_domain(ex::env<>{});
 constexpr auto read_token = ex::read_env(std::get_stop_token);
 constexpr auto written_token = ex::write_env(read_token, ex::env<>{});
 static_assert(ex::sender_in<decltype(read_token), ex::env<>>);
 static_assert(!ex::sender_in<decltype(ex::read_env(std::get_allocator)), ex::env<>>);
+static_assert(!ex::sender_in<decltype(ex::read_env(std::get_scheduler_allocator)), ex::env<>>);
 struct void_query { void operator()(ex::env<>&) const noexcept; };
 struct rvalue_query { int operator()(ex::env<>&&) const noexcept; };
 struct nondefault_query {

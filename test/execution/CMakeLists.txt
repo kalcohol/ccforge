@@ -74,13 +74,13 @@ endif()
 set(_forge_query_probe_defs "${CMAKE_REQUIRED_DEFINITIONS}")
 forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_MEMBER_POSITIVE
     test_execution_reject_query_mandates.cpp ON "Conforming query control must compile")
-foreach(_case IN ITEMS 10 11 21 23 30 32 33 34 35 36)
+foreach(_case IN ITEMS 10 11 21 23 30 32 33 34 35 36 37 38 39)
     set(CMAKE_REQUIRED_DEFINITIONS ${_forge_query_probe_defs}
         -DFORGE_QUERY_CASE=${_case} -DFORGE_QUERY_POSITIVE=1)
     forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_MEMBER_CONTROL_${_case}
         test_execution_reject_query_mandates.cpp ON "Query Mandate positive control must compile and link")
 endforeach()
-foreach(_case RANGE 1 36)
+foreach(_case RANGE 1 39)
     set(CMAKE_REQUIRED_DEFINITIONS ${_forge_query_probe_defs} -DFORGE_QUERY_CASE=${_case})
     forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_QUERY_MEMBER_MANDATE_${_case}
         test_execution_reject_query_mandates.cpp OFF "Query and core CPO Mandates must reject this case")

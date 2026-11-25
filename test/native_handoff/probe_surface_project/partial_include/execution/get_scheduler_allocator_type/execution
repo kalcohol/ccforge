@@ -1,0 +1,7 @@
+#pragma once
+
+namespace std {
+
+struct get_scheduler_allocator_t {};
+
+} // namespace std

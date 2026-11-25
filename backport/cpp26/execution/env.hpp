@@ -288,12 +288,9 @@ namespace __forge_env_detail {
 
 template<class A>
 concept __simple_allocator = requires(A a, std::size_t n) {
-    typename A::value_type;
-    requires std::copy_constructible<A>;
-    requires std::equality_comparable<A>;
-    { a.allocate(n) } -> std::same_as<typename A::value_type*>;
-    { a.deallocate(a.allocate(n), n) } -> std::same_as<void>;
-};
+    { *a.allocate(n) } -> std::same_as<typename A::value_type&>;
+    { a.deallocate(a.allocate(n), n) };
+} && std::copy_constructible<A> && std::equality_comparable<A>;
 
 } // namespace __forge_env_detail
 } // namespace std::execution
@@ -340,6 +337,38 @@ struct get_allocator_t {
     }
 };
 inline constexpr get_allocator_t get_allocator{};
+
+struct get_scheduler_allocator_t {
+    template<class Env>
+        requires execution::__forge_env_detail::__queryable<get_scheduler_allocator_t, Env> ||
+                 execution::__forge_env_detail::__queryable<get_allocator_t, Env>
+    constexpr decltype(auto) operator()(Env&& env) const noexcept;
+
+    constexpr bool query(std::forwarding_query_t) const noexcept {
+        return true;
+    }
+};
+inline constexpr get_scheduler_allocator_t get_scheduler_allocator{};
+
+template<class Env>
+    requires execution::__forge_env_detail::__queryable<get_scheduler_allocator_t, Env> ||
+             execution::__forge_env_detail::__queryable<get_allocator_t, Env>
+constexpr decltype(auto) get_scheduler_allocator_t::operator()(Env&& env) const noexcept {
+    namespace detail = execution::__forge_env_detail;
+    // Select the member tag before enforcing either Mandate.
+    constexpr const auto& query = []() -> const auto& {
+        if constexpr (detail::__queryable<get_scheduler_allocator_t, Env>) {
+            return std::get_scheduler_allocator;
+        } else {
+            return std::get_allocator;
+        }
+    }();
+    const auto& const_env = env;
+    static_assert(noexcept(const_env.query(query)), "query must be noexcept");
+    using result_t = std::remove_cvref_t<decltype(const_env.query(query))>;
+    static_assert(detail::__simple_allocator<result_t>, "invalid query result");
+    return const_env.query(query);
+}
 
 template<class T>
 using stop_token_of_t = remove_cvref_t<decltype(std::get_stop_token(std::declval<T>()))>;

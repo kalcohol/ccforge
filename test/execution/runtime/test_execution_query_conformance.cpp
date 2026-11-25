@@ -3,10 +3,27 @@
 #include <forge/strand.hpp>
 #include <forge/task.hpp>
 #include <gtest/gtest.h>
+#include <cstddef>
+#include <functional>
 #include <memory>
 #include <type_traits>
 namespace ex = std::execution;
 namespace {
+struct fancy_pointer {
+    int* value;
+    int& operator*() const noexcept { return *value; }
+};
+struct fancy_allocator {
+    using value_type = int;
+    int identity;
+
+    fancy_pointer allocate(std::size_t n) { return {std::allocator<int>{}.allocate(n)}; }
+    bool deallocate(fancy_pointer ptr, std::size_t n) noexcept {
+        std::allocator<int>{}.deallocate(ptr.value, n);
+        return true;
+    }
+    bool operator==(const fancy_allocator&) const noexcept = default;
+};
 struct domain {};
 struct resource_scheduler {
     using scheduler_concept = ex::scheduler_tag;
@@ -66,6 +83,27 @@ TEST(QueryConformanceTest, PropMovesItsMoveOnlyValue) {
     EXPECT_FALSE(property.query(value_tag{}));
     ASSERT_TRUE(moved.query(value_tag{}));
     EXPECT_EQ(*moved.query(value_tag{}), 39);
+}
+TEST(QueryConformanceTest, FancyAllocatorWorksForBothQueries) {
+    const fancy_allocator alloc{7};
+    const auto ordinary = ex::prop{std::get_allocator, std::cref(alloc)};
+    const auto preferred = ex::prop{std::get_scheduler_allocator, std::cref(alloc)};
+    static_assert(std::same_as<decltype(std::get_allocator(ordinary)), const fancy_allocator&>);
+    static_assert(std::same_as<decltype(std::get_scheduler_allocator(preferred)), const fancy_allocator&>);
+    EXPECT_EQ(&std::get_allocator(ordinary), &alloc);
+    EXPECT_EQ(&std::get_scheduler_allocator(ordinary), &alloc);
+    EXPECT_EQ(&std::get_scheduler_allocator(preferred), &alloc);
+}
+TEST(QueryConformanceTest, SchedulerAllocatorForwardsThroughThen) {
+    const fancy_allocator scheduler{9};
+    auto overlay = ex::env{ex::prop{std::get_allocator, std::allocator<int>{}},
+                           ex::prop{std::get_scheduler_allocator, std::cref(scheduler)}};
+    auto result = std::this_thread::sync_wait(ex::write_env(
+        ex::then(ex::read_env(std::get_scheduler_allocator),
+                 [&scheduler](const fancy_allocator& alloc) noexcept { return &alloc == &scheduler; }),
+        overlay));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(std::get<0>(*result));
 }
 TEST(QueryConformanceTest, CompletionSchedulerResolvesTypeAndValueChains) {
     int evaluations = 0;

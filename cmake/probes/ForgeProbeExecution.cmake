@@ -4,6 +4,7 @@ check_cxx_source_compiles("
     #include <execution>
     #include <concepts>
     #include <exception>
+    #include <memory>
     #include <optional>
     #include <stop_token>
     #include <tuple>
@@ -26,6 +27,12 @@ check_cxx_source_compiles("
         void set_stopped() && noexcept {}
     };
 
+    struct probe_allocator_env {
+        std::allocator<int> query(const std::get_scheduler_allocator_t&) const noexcept {
+            return {};
+        }
+    };
+
     struct probe_apply_tag {};
 
     struct probe_apply_domain {
@@ -44,6 +51,11 @@ check_cxx_source_compiles("
         using get_env_cpo = std::execution::get_env_t;
         const get_env_cpo* get_env_probe = &std::execution::get_env;
         (void)get_env_probe;
+        static_assert(std::same_as<decltype(std::get_scheduler_allocator),
+                                   const std::get_scheduler_allocator_t>);
+        decltype(auto) allocator = std::get_scheduler_allocator(probe_allocator_env{});
+        static_assert(std::same_as<decltype(allocator), std::allocator<int>>);
+        (void)allocator;
         static_assert(std::execution::receiver<probe_receiver>);
         static_assert(std::same_as<
             decltype(std::execution::get_env(
@@ -194,6 +206,17 @@ check_cxx_source_compiles("
         return 0;
     }
 " FORGE_SENDERS_PARTIAL_GET_ENV)
+# Either public name alone conflicts with the backport.
+check_cxx_source_compiles("
+    #include <execution>
+    using probe = decltype(std::get_scheduler_allocator);
+    int main() { return 0; }
+" FORGE_SENDERS_PARTIAL_GET_SCHEDULER_ALLOCATOR)
+check_cxx_source_compiles("
+    #include <execution>
+    using probe = std::get_scheduler_allocator_t;
+    int main() { return 0; }
+" FORGE_SENDERS_PARTIAL_GET_SCHEDULER_ALLOCATOR_TYPE)
 check_cxx_source_compiles("
     #include <execution>
     using probe = std::execution::get_await_completion_adaptor_t;
@@ -289,6 +312,8 @@ if(FORGE_SENDERS_PARTIAL_MACRO
         OR FORGE_SENDERS_PARTIAL_CONNECT
         OR FORGE_SENDERS_PARTIAL_START
         OR FORGE_SENDERS_PARTIAL_GET_ENV
+        OR FORGE_SENDERS_PARTIAL_GET_SCHEDULER_ALLOCATOR
+        OR FORGE_SENDERS_PARTIAL_GET_SCHEDULER_ALLOCATOR_TYPE
         OR FORGE_SENDERS_PARTIAL_AWAIT_ADAPTOR
         OR FORGE_SENDERS_PARTIAL_AS_AWAITABLE
         OR FORGE_SENDERS_PARTIAL_SCHEDULE_FROM

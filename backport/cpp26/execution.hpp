@@ -50,6 +50,7 @@
 //                      private per-adaptor signature transforms, enable_sender,
 //                      get_start_scheduler/get_delegation_scheduler,
 //                      forwarding_query, get_forward_progress_guarantee,
+//                      get_allocator/get_scheduler_allocator CPOs,
 //                      get_completion_scheduler/get_completion_domain CPOs,
 //                      get_await_completion_adaptor CPO,
 //                      transform_sender/apply_sender domain dispatch,

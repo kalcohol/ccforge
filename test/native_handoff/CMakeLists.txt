@@ -64,19 +64,22 @@ set_tests_properties(native_handoff_partial_simd_configure PROPERTIES
     TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 
 if(NOT MSVC)
-    add_test(
-        NAME native_handoff_senders_complete_configure
-        COMMAND ${CMAKE_COMMAND}
-            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/senders_complete_project
-            -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/senders_complete_project
-            -DFORGE_ROOT_DIR=${CMAKE_SOURCE_DIR}
-            -DCXX_STANDARD=${CMAKE_CXX_STANDARD}
-            "-DGENERATOR=${CMAKE_GENERATOR}"
-            "-DCXX_COMPILER=${CMAKE_CXX_COMPILER}"
-            "-DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/verify_senders_complete.cmake)
-    set_tests_properties(native_handoff_senders_complete_configure PROPERTIES
-        TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+    foreach(senders_case IN ITEMS complete missing_scheduler_allocator)
+        add_test(
+            NAME native_handoff_senders_${senders_case}_configure
+            COMMAND ${CMAKE_COMMAND}
+                -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/senders_complete_project
+                -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/senders_${senders_case}_project
+                -DFORGE_ROOT_DIR=${CMAKE_SOURCE_DIR}
+                -DSENDERS_CASE=${senders_case}
+                -DCXX_STANDARD=${CMAKE_CXX_STANDARD}
+                "-DGENERATOR=${CMAKE_GENERATOR}"
+                "-DCXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                "-DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/verify_senders_complete.cmake)
+        set_tests_properties(native_handoff_senders_${senders_case}_configure PROPERTIES
+            TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+    endforeach()
 
     set(probe_surface_cases
         "sampled|macro"
@@ -87,6 +90,9 @@ if(NOT MSVC)
         "independent_roots|connect"
         "independent_roots|start"
         "independent_roots|get_env"
+        "independent_roots|get_scheduler_allocator"
+        "independent_roots|get_scheduler_allocator_type"
+        "independent_roots|get_scheduler_allocator_object"
         "independent_roots|await_adaptor"
         "independent_roots|as_awaitable"
         "independent_roots|schedule_from"
