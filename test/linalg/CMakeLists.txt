@@ -107,10 +107,6 @@ if(FORGE_BASE_MDSPAN_AVAILABLE AND FORGE_LINALG_HAS_MDSPAN_FEATURE)
     endif()
 
     if(_forge_linalg_backport_injected)
-        forge_add_linalg_runtime_test(
-            test_forge_linalg_extensions
-            test_forge_linalg_extensions.cpp
-            linalg_forge_extensions)
         forge_add_linalg_compile_probe(
             test_linalg_draft_surface
             test_linalg_draft_surface.cpp
@@ -119,7 +115,7 @@ if(FORGE_BASE_MDSPAN_AVAILABLE AND FORGE_LINALG_HAS_MDSPAN_FEATURE)
             FORGE_LINALG_SSQ_CONTROL
             test_linalg_removed_ssq.cpp
             ON
-            "The standard norm and Forge sum-of-squares controls must compile")
+            "The standard vector_two_norm control must compile")
         set(_forge_linalg_ssq_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
         foreach(_forge_case IN ITEMS FUNCTION TYPE)
             set(CMAKE_REQUIRED_DEFINITIONS ${_forge_linalg_ssq_definitions}

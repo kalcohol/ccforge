@@ -440,21 +440,9 @@ callback 异常以 `std::exception_ptr` 传递。
 `std::execution::seq`。未启用 backport 且原生实现不满足上述条件时，
 头文件不声明这些入口。
 
-## 线性代数扩展
+## 已移除的线性代数扩展
 
-`<forge/linalg.hpp>` 提供 `forge::vector_two_norm`、`forge::matrix_frob_norm`、
-`forge::setup_givens_rotation` 和 `forge::apply_givens_rotation`。
-当注入 `<linalg>` backport 时，这些入口提供顺序调用及整数扩展，头文件还提供
-`forge::vector_sum_of_squares`（SSQ）与 `forge::sum_of_squares_result<T>`。
-原生 `<linalg>` 定义 `__cpp_lib_linalg` 时，两个范数和两个 Givens 入口按原生重载转发。
-Forge 的整数扩展与 SSQ 只在 backport 注入时提供。
-
-当元素、访问值及初值均为整数时，两个范数在包含初值的平方和不超过 2^53 时精确累计，
-再以 double 开方。超出此范围时采用 double scaled sum-of-squares 递推。整数结果
-向零截断并在超出表示域时饱和。SSQ 的整数结果用 double 累计原始平方和，返回单位
-缩放因子，结果超出整数表示域时饱和。平方项或累计和超过 2^53 后允许 double 舍入。
-整数 Givens 的构造和应用都要求有符号整数系数。构造返回
-`std::linalg::setup_givens_rotation_result<T>`，系数保留整数运算。
-应用时先读取两个元素值，再分别赋值，支持可读取和赋值的代理引用。
-
-旧标准命名空间入口的逐项迁移见 [linalg 说明](backports/linalg.md#已移除的非草案形式)。
+`forge/linalg.hpp` 已移除。对于可接受浮点或复数转换的代码，改用 `<linalg>` 的标准入口。
+精确整数与 SSQ 行为没有直接的标准替代；旧行为保存在归档分支
+`archive/forge-linalg-integer-extensions-20261125`（`93b97c361f72f90611da6bfc2c20ce14a3d13aff`）。
+逐项迁移见 [linalg 说明](backports/linalg.md#已移除的非草案形式)。

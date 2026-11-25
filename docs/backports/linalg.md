@@ -216,15 +216,15 @@ dot product 路径；`layout_stride`、packed layout 和非 default accessor 保
 下表列出已移除的调用形式。表中的矩阵算法位于 `std::linalg`，
 `Scalar{1}` 使用输出元素对应的标量类型。
 
-| 移除的形式 | 草案调用或 Forge 迁移入口 |
+| 移除的形式 | 草案调用或迁移方式 |
 | --- | --- |
-| `vector_two_norm(v[, init])` 的整数或自定义元素、`Scalar` | 整数元素或整数初值调用 `forge::vector_two_norm(v[, init])`；自定义类型转换为浮点或复数后调用标准入口 |
-| `matrix_frob_norm(A[, init])` 的整数或自定义元素、`Scalar` | 整数元素或整数初值调用 `forge::matrix_frob_norm(A[, init])`；自定义类型转换为浮点或复数后调用标准入口 |
-| `setup_givens_rotation(a, b)` 的整数或自定义 `Real` | 有符号整数调用 `forge::setup_givens_rotation(a, b)`；无符号整数和自定义 `Real` 转换为浮点后调用标准入口 |
-| `apply_givens_rotation(x, y, c, s)` 的整数系数 | 有符号整数系数使用 `forge::apply_givens_rotation(x, y, c, s)`；无符号整数系数转换为浮点后调用标准入口 |
+| `vector_two_norm(v[, init])` 的整数或自定义元素、`Scalar`，包括旧 `forge::vector_two_norm(v, init)` | 可接受转换时，将元素转换为浮点或复数并以 `v_fp` 引用转换后的存储，再用 `std::linalg::vector_two_norm(v_fp, static_cast<double>(init))`（实数初值示例） |
+| `matrix_frob_norm(A[, init])` 的整数或自定义元素、`Scalar`，包括旧 `forge::matrix_frob_norm(A, init)` | 可接受转换时，将元素转换为浮点或复数，再用 `std::linalg::matrix_frob_norm(A_fp, static_cast<double>(init))`（实数初值示例） |
+| `setup_givens_rotation(a, b)` 的整数或自定义 `Real`，包括旧 `forge::setup_givens_rotation(a, b)` | 可接受转换时，用 `std::linalg::setup_givens_rotation(static_cast<double>(a), static_cast<double>(b))`；复数使用浮点分量，例如 `std::complex<double>` |
+| `apply_givens_rotation(x, y, c, s)` 的整数系数，或旧 `forge::apply_givens_rotation(x, y, c, s)` | 可接受转换时，将向量元素和系数转换到相容的浮点或复数类型，再用 `std::linalg::apply_givens_rotation(x_fp, y_fp, c_fp, s_fp)`；复数版本的 `c_fp` 是实数 |
 | Givens setup 或 application（含 policy application）显式指定带 cv 限定的系数类型，例如 `const double` | 省略显式模板实参，由调用推导 `double`，或显式指定不带 cv 限定的 `double` |
-| `std::linalg::vector_sum_of_squares(v, init)` | `forge::vector_sum_of_squares(v, init)`；初值对平方和的贡献为零、只需范数且类型符合草案时，可用 `std::linalg::vector_two_norm(v)` |
-| `std::linalg::sum_of_squares_result<T>` | `forge::sum_of_squares_result<T>` |
+| `std::linalg::vector_sum_of_squares(v, init)` 或旧 `forge::vector_sum_of_squares(v, init)` | 无直接替代；若初值对平方和的贡献为零且只需范数，可用 `std::linalg::vector_two_norm(v_fp)` |
+| `std::linalg::sum_of_squares_result<T>` 或旧 `forge::sum_of_squares_result<T>` | 无标准缩放因子／平方和结果类型 |
 | `hermitian_matrix_rank_1_update(t, x, A)` | `hermitian_matrix_rank_1_update(Scalar{1}, x, A, t)` |
 | `hermitian_matrix_rank_2_update(t, x, y, A)` | `hermitian_matrix_rank_2_update(x, y, A, t)` |
 | `hermitian_matrix_product(t, A, B, C)` | `hermitian_matrix_product(A, t, B, C)` |
@@ -242,9 +242,11 @@ dot product 路径；`layout_stride`、packed layout 和非 default accessor 保
 [linalg synopsis](https://eel.is/c++draft/linalg.syn)，转置 mapping 构造见
 [linalg.transp.layout.transpose](https://eel.is/c++draft/linalg.transp.layout.transpose)。
 
-[Forge linalg 扩展](../forge-utilities.md#线性代数扩展)在 backport 注入时提供整数入口与 SSQ。
-[LWG 4302](https://cplusplus.github.io/LWG/issue4302)
-从工作草案移除了 SSQ 函数及结果类型。
+[LWG 4302](https://cplusplus.github.io/LWG/issue4302) 从工作草案移除了 SSQ 函数及结果类型。
+2026-11-25 的 P0-1 也移除了 `forge/linalg.hpp`，包括整数扩展、SSQ 和原生转发包装器。
+精确整数范数、整数 Givens 运算与 SSQ 行为均无直接标准替代；浮点转换不能保证旧结果。
+仍需旧行为时，可使用归档分支 `archive/forge-linalg-integer-extensions-20261125`
+（`93b97c361f72f90611da6bfc2c20ce14a3d13aff`）。
 
 ## 示例
 

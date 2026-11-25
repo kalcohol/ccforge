@@ -150,7 +150,7 @@ include path。与标准同名的包装头（如 `backport/linalg`）先包含�
 非 MSVC 的 `native_handoff_probe_surface_no_shadow_root` 用合成原生头覆盖全部让位
 的分支，并通过普通编译探测验证扩展头可用且 backport 目录未暴露。
 `native_handoff_probe_surface_no_shadow_root_no_mdspan` 还验证缺少可用的基础
-`<mdspan>` 时的消费方式。消费者首先包含 `<forge/linalg.hpp>`，在合成的 `<linalg>` 与
+`<mdspan>` 时的消费方式。消费者包含 `<forge/unique_resource.hpp>`，在合成的 `<linalg>` 与
 `<mdspan>` 头可被找到且实际包含会报错的条件下，检查 `FORGE_NO_BASE_MDSPAN` 已传播到
 消费者，并确认 backport include root 仍不可见。
 

@@ -58,12 +58,6 @@ function(forge_expect_forge_cxx_source_compiles result_var source_name should_co
     unset(_forge_target_definitions)
 endfunction()
 
-# Header availability must not imply that base mdspan/linalg is implemented.
-forge_add_forge_compile_probe(
-    test_forge_linalg_header
-    test_forge_linalg_header.cpp
-    forge_linalg_header_compile)
-
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME
         OR (FORGE_ENABLE_FORGE_RESOURCE_POLICY
             AND FORGE_TEST_ENABLE_FORGE_RESOURCE)

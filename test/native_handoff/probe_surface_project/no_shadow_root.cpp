@@ -1,4 +1,3 @@
-#include <forge/linalg.hpp>
 #include <forge/unique_resource.hpp>
 
 #if __has_include(<forge_native_execution.hpp>)
