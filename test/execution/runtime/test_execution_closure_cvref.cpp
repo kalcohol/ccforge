@@ -1,5 +1,4 @@
-#include <forge/bulk.hpp>
-#include <forge/execution_extensions.hpp>
+#include "test_bulk.hpp"
 #include <gtest/gtest.h>
 
 #include <execution>
@@ -140,7 +139,7 @@ void check_category(MakeClosure make_closure, MakeSource make_source,
     }
     EXPECT_EQ(state.calls, 0);
 
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), expected_value);
     EXPECT_EQ(state.calls, expected_calls);
@@ -161,7 +160,7 @@ void check_all_categories(MakeClosure make_closure, MakeSource make_source,
 
 template<class Sender>
 void expect_value(Sender sender, int expected = 42) {
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), expected);
 }
@@ -190,11 +189,11 @@ TEST(ExecutionClosureCvref, LetForwardsAllCaptureCategories) {
 }
 
 TEST(ExecutionClosureCvref, BulkForwardsAllCopyableCaptureCategories) {
-    check_all_categories([](capture_state& s) { return forge::bulk(3, tracked_callback<false>{s}); },
+    check_all_categories([](capture_state& s) { return test_bulk::bulk(3, tracked_callback<false>{s}); },
         [] { return ex::just(7); }, 3, 7);
-    check_all_categories([](capture_state& s) { return forge::bulk_unchunked(3, tracked_callback<false>{s}); },
+    check_all_categories([](capture_state& s) { return test_bulk::bulk_unchunked(3, tracked_callback<false>{s}); },
         [] { return ex::just(7); }, 3, 7);
-    check_all_categories([](capture_state& s) { return forge::bulk_chunked(3, tracked_callback<false>{s}); },
+    check_all_categories([](capture_state& s) { return test_bulk::bulk_chunked(3, tracked_callback<false>{s}); },
         [] { return ex::just(7); }, 1, 7);
 }
 
@@ -235,7 +234,7 @@ TEST(ExecutionClosureCvref, ConstRvalueCapturesDoNotFallBackToConstLvalue) {
 
 TEST(ExecutionClosureCvref, CopyableBulkLvalueClosureCanBeAppliedRepeatedly) {
     capture_state state;
-    auto closure = forge::bulk(3, tracked_callback<false>{state});
+    auto closure = test_bulk::bulk(3, tracked_callback<false>{state});
     expect_value(closure(ex::just(7)), 7);
     expect_value(ex::just(7) | closure, 7);
     EXPECT_EQ(state.calls, 6);

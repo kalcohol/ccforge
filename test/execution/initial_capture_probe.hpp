@@ -1,8 +1,6 @@
 #pragma once
 
-#include <forge/bulk.hpp>
-
-#include <forge/execution_extensions.hpp>
+#include "test_bulk.hpp"
 #include <execution>
 
 #include <array>
@@ -35,9 +33,9 @@ inline constexpr auto adaptor = [] {
     else if constexpr (Kind == kind::let_value) return ex::let_value;
     else if constexpr (Kind == kind::let_error) return ex::let_error;
     else if constexpr (Kind == kind::let_stopped) return ex::let_stopped;
-    else if constexpr (Kind == kind::bulk) return forge::bulk;
-    else if constexpr (Kind == kind::bulk_unchunked) return forge::bulk_unchunked;
-    else return forge::bulk_chunked;
+    else if constexpr (Kind == kind::bulk) return test_bulk::bulk;
+    else if constexpr (Kind == kind::bulk_unchunked) return test_bulk::bulk_unchunked;
+    else return test_bulk::bulk_chunked;
 }();
 
 template<kind Kind>
@@ -202,7 +200,7 @@ struct tracked_source {
         record(state, category::const_rvalue);
     }
 
-    forge::empty_env get_env() const noexcept { return {}; }
+    ex::env<> get_env() const noexcept { return {}; }
 
     template<class R>
     struct operation {

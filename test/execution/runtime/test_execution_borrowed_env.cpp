@@ -1,5 +1,4 @@
-#include <forge/execution_extensions.hpp>
-#include <forge/bulk.hpp>
+#include "test_bulk.hpp"
 #include <gtest/gtest.h>
 #include <execution>
 #include <concepts>
@@ -68,7 +67,7 @@ struct shape_sender {
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
         -> ex::completion_signatures<ex::set_value_t(child_environment_shape<Env>)> { return {}; }
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
     template<class R>
     struct operation {
         using operation_state_concept = ex::operation_state_tag;
@@ -95,7 +94,7 @@ struct type_sender {
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
         -> ex::completion_signatures<ex::set_value_t(environment_type<Env>)> { return {}; }
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
     template<class R>
     struct operation {
         using operation_state_concept = ex::operation_state_tag;
@@ -236,7 +235,7 @@ struct user_wrapper {
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept
         -> ex::completion_signatures_of_t<Inner, Env> { return {}; }
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
     template<ex::receiver R>
     auto connect(R receiver) const -> ex::connect_result_t<const Inner&, R> {
         return ex::connect(inner, std::move(receiver));
@@ -605,13 +604,13 @@ static_assert(participates_with_child<decltype(ex::let_value(ex::just(), make_ne
 static_assert(participates_with_child<decltype(ex::continues_on(needs_query_sender{}, ex::inline_scheduler{}))>);
 static_assert(participates_with_child<decltype(ex::continues_on(ex::just(), needy_scheduler{}))>);
 static_assert(participates_with_child<decltype(ex::schedule_from(needs_query_sender{}))>);
-static_assert(participates_with_child<decltype(ex::write_env(needs_query_sender{}, forge::empty_env{}))>);
+static_assert(participates_with_child<decltype(ex::write_env(needs_query_sender{}, ex::env<>{}))>);
 static_assert(participates_with_child<decltype(ex::then(needs_query_sender{}, pass_value{}))>);
 static_assert(participates_with_child<decltype(ex::upon_error(needs_query_sender{}, replace_with_int{}))>);
 static_assert(participates_with_child<decltype(ex::upon_stopped(needs_query_sender{}, replace_with_int{}))>);
-static_assert(participates_with_child<decltype(forge::bulk(needs_query_sender{}, 3, ignore_arguments{}))>);
-static_assert(participates_with_child<decltype(forge::bulk_chunked(needs_query_sender{}, 3, ignore_arguments{}))>);
-static_assert(participates_with_child<decltype(forge::bulk_unchunked(needs_query_sender{}, 3, ignore_arguments{}))>);
+static_assert(participates_with_child<decltype(test_bulk::bulk(needs_query_sender{}, 3, ignore_arguments{}))>);
+static_assert(participates_with_child<decltype(test_bulk::bulk_chunked(needs_query_sender{}, 3, ignore_arguments{}))>);
+static_assert(participates_with_child<decltype(test_bulk::bulk_unchunked(needs_query_sender{}, 3, ignore_arguments{}))>);
 static_assert(participates_with_child<decltype(ex::into_variant(needs_query_sender{}))>);
 static_assert(participates_with_child<decltype(ex::stopped_as_optional(needs_query_sender{}))>);
 
@@ -793,9 +792,9 @@ TEST(ExecutionBorrowedEnvTest, SharedAdaptorsAdvertiseRuntimeEnvironmentType) {
     check_advertised_type(ex::then(type_sender{}, pass_value{}));
     check_advertised_type(ex::upon_error(type_sender{}, replace_with_int{}));
     check_advertised_type(ex::upon_stopped(type_sender{}, replace_with_int{}));
-    check_advertised_type(forge::bulk(type_sender{}, 3, ignore_arguments{}));
-    check_advertised_type(forge::bulk_chunked(type_sender{}, 3, ignore_arguments{}));
-    check_advertised_type(forge::bulk_unchunked(type_sender{}, 3, ignore_arguments{}));
+    check_advertised_type(test_bulk::bulk(type_sender{}, 3, ignore_arguments{}));
+    check_advertised_type(test_bulk::bulk_chunked(type_sender{}, 3, ignore_arguments{}));
+    check_advertised_type(test_bulk::bulk_unchunked(type_sender{}, 3, ignore_arguments{}));
     check_advertised_type(ex::into_variant(type_sender{}));
     check_advertised_type(ex::stopped_as_optional(type_sender{}));
 }
@@ -847,7 +846,7 @@ TEST(ExecutionBorrowedEnvTest, ContinuesOnAndWriteEnvForwardRefQualifiedReceiver
     // The joined environment of write_env has unary lookup only.
     using lvalue_receiver = category_receiver<const int*, ref_qualified_env&>;
     auto written = run_category_child<const int*, lvalue_receiver>(
-        ex::write_env(ex::read_env(inspect_const_unary_reference{}), forge::empty_env{}), &env);
+        ex::write_env(ex::read_env(inspect_const_unary_reference{}), ex::env<>{}), &env);
     EXPECT_EQ(written, std::addressof(env.value));
 }
 
@@ -870,7 +869,7 @@ TEST(ExecutionBorrowedEnvTest, AssociateAndUserSendersAdvertiseRuntimeEnvironmen
         ex::start(op);
         EXPECT_TRUE(completed);
     }
-    forge::sync_wait(scope.join());
+    std::this_thread::sync_wait(scope.join());
 }
 
 template<class Env, class Sender>
@@ -894,7 +893,7 @@ void check_volatile_environments() {
     check_volatile_environment<Env>(
         ex::continues_on(ex::read_env(volatile_query{}), ex::inline_scheduler{}));
     check_volatile_environment<Env>(
-        ex::write_env(ex::read_env(volatile_query{}), forge::empty_env{}));
+        ex::write_env(ex::read_env(volatile_query{}), ex::env<>{}));
 }
 
 TEST(ExecutionBorrowedEnvTest, VolatileEnvironmentIsBorrowedAsVolatile) {
@@ -1056,11 +1055,11 @@ void check_retained_view_copies() {
     });
     check_retained_view_copy<Env>([](auto child) { return ex::on(ex::inline_scheduler{}, child); });
     check_retained_view_copy<Env>([](auto child) {
-        return ex::write_env(child, forge::empty_env{});
+        return ex::write_env(child, ex::env<>{});
     });
     check_retained_view_copy<Env>([](auto child) { return ex::schedule_from(child); });
     check_retained_view_copy<Env>([](auto child) {
-        return forge::bulk(child, 3, ignore_arguments{});
+        return test_bulk::bulk(child, 3, ignore_arguments{});
     });
 }
 
@@ -1083,7 +1082,7 @@ TEST(ExecutionBorrowedEnvTest, OwnedEnvironmentIsTheObjectThatGetEnvReturned) {
     EXPECT_EQ(calls, 1);
     calls = 0;
     result = 0;
-    auto write_op = ex::connect(ex::write_env(ex::read_env(needed_query{}), forge::empty_env{}),
+    auto write_op = ex::connect(ex::write_env(ex::read_env(needed_query{}), ex::env<>{}),
                                 greedy_receiver{&calls, &result});
     ex::start(write_op);
     EXPECT_EQ(result, 42);
@@ -1110,7 +1109,7 @@ void check_tag_environment(const std::remove_cvref_t<Env>& tag) {
     ex::start(then_op);
     EXPECT_EQ(result, 7);
     result = 0;
-    auto write_op = ex::connect(ex::write_env(ex::just(7), forge::empty_env{}),
+    auto write_op = ex::connect(ex::write_env(ex::just(7), ex::env<>{}),
                                 tag_env_receiver<Env>{&tag, &result});
     ex::start(write_op);
     EXPECT_EQ(result, 7);
@@ -1131,7 +1130,7 @@ TEST(ExecutionBorrowedEnvTest, BorrowingViewsOfNoncopyableEnvironmentsAreCopyabl
     auto let_sender = ex::let_value(ex::just(), [child]() noexcept { return child; });
     static_assert(ex::sender_in<decltype(let_sender), const borrowed_env&>);
     check_environment(std::move(let_sender), env);
-    auto write_sender = ex::write_env(child, forge::empty_env{});
+    auto write_sender = ex::write_env(child, ex::env<>{});
     static_assert(ex::sender_in<decltype(write_sender), const borrowed_env&>);
     check_environment(std::move(write_sender), env);
     check_environment(ex::then(child, pass_value{}), env);
@@ -1173,7 +1172,7 @@ TEST(ExecutionBorrowedEnvTest, ByValueEnvironmentOutlivesForwardedReferences) {
         return ex::continues_on(child, ex::inline_scheduler{});
     });
     check_by_value_environment_lifetime([](auto child) {
-        return ex::write_env(child, forge::empty_env{});
+        return ex::write_env(child, ex::env<>{});
     });
 }
 
@@ -1181,8 +1180,8 @@ TEST(ExecutionBorrowedEnvTest, WriteEnvBorrowsReferencesAndOwnsValues) {
     std::inplace_stop_source source;
     borrowed_env borrowed{source.get_token()};
     owned_env owned{source.get_token()};
-    check_environment(ex::write_env(inspect_environment(source.get_token()), forge::empty_env{}), borrowed);
-    check_environment(ex::write_env(inspect_environment(source.get_token()), forge::empty_env{}), owned);
+    check_environment(ex::write_env(inspect_environment(source.get_token()), ex::env<>{}), borrowed);
+    check_environment(ex::write_env(inspect_environment(source.get_token()), ex::env<>{}), owned);
     std::inplace_stop_source overlay;
     check_environment(ex::write_env(inspect_environment(overlay.get_token()),
         owned_env{overlay.get_token()}), borrowed);

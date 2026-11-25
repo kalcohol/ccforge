@@ -1,6 +1,6 @@
 #pragma once
 
-#include <forge/bulk.hpp>
+#include "test_bulk.hpp"
 #include <execution>
 
 #include <type_traits>
@@ -210,9 +210,9 @@ void for_each_adaptor(S sender, Verify verify) {
     verify(ex::let_value(sender, sender_callback{}));
     verify(ex::let_error(sender, sender_callback{}));
     verify(ex::let_stopped(sender, sender_callback{}));
-    verify(forge::bulk(sender, 3, bulk_callback{}));
-    verify(forge::bulk_unchunked(sender, 3, bulk_callback{}));
-    verify(forge::bulk_chunked(sender, 3, bulk_callback{}));
+    verify(test_bulk::bulk(sender, 3, bulk_callback{}));
+    verify(test_bulk::bulk_unchunked(sender, 3, bulk_callback{}));
+    verify(test_bulk::bulk_chunked(sender, 3, bulk_callback{}));
     verify(ex::into_variant(sender));
     verify(ex::stopped_as_optional(sender));
     verify(ex::stopped_as_error(sender, 55));

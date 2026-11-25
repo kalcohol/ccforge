@@ -1,5 +1,4 @@
-#include <forge/bulk.hpp>
-#include <forge/execution_extensions.hpp>
+#include "test_bulk.hpp"
 #include <gtest/gtest.h>
 
 #include <execution>
@@ -269,7 +268,7 @@ struct synchronous_sender {
         return op<R>{state, std::move(r)};
     }
 
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
 };
 
 template<adaptor_kind Kind, bool Nothrow = false, class S>
@@ -284,11 +283,11 @@ auto adapt(S sndr, probe& state) {
     } else if constexpr (Kind == adaptor_kind::upon_stopped) {
         return ex::upon_stopped(std::move(sndr), std::move(fn));
     } else if constexpr (Kind == adaptor_kind::bulk) {
-        return forge::bulk(std::move(sndr), 3, std::move(fn));
+        return test_bulk::bulk(std::move(sndr), 3, std::move(fn));
     } else if constexpr (Kind == adaptor_kind::bulk_unchunked) {
-        return forge::bulk_unchunked(std::move(sndr), 3, std::move(fn));
+        return test_bulk::bulk_unchunked(std::move(sndr), 3, std::move(fn));
     } else if constexpr (Kind == adaptor_kind::bulk_chunked) {
-        return forge::bulk_chunked(std::move(sndr), 3, std::move(fn));
+        return test_bulk::bulk_chunked(std::move(sndr), 3, std::move(fn));
     } else {
         return ex::stopped_as_error(std::move(sndr), std::move(fn));
     }
@@ -347,7 +346,7 @@ TYPED_TEST(ThrowingMoveAdaptors, RvalueAndCopyableLvalueConnect) {
         probe state;
         {
             auto sndr = make_sender<kind, true>(state);
-            using cs = ex::completion_signatures_of_t<decltype(sndr), forge::empty_env>;
+            using cs = ex::completion_signatures_of_t<decltype(sndr), ex::env<>>;
             if constexpr (kind == adaptor_kind::stopped_as_error) {
                 static_assert(std::is_same_v<cs, ex::completion_signatures<
                     ex::set_error_t(payload<kind, true>)>>);

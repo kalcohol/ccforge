@@ -1,6 +1,6 @@
-#include <forge/bulk.hpp>
+#include "test_bulk.hpp"
 #include <forge/detail/execution_concepts.hpp>
-#include <forge/execution_extensions.hpp>
+#include <execution>
 
 #include "../bulk_policy_probe.hpp"
 
@@ -112,12 +112,12 @@ int main() {
     static_assert(ex::sender<decltype(ex::on(source, scheduler, custom_closure{}))>);
     static_assert(ex::sender<decltype(source | ex::on(scheduler, custom_closure{}))>);
 
-    static_assert(ex::sender<decltype(forge::bulk(ex::just(42), 0, each_index{}))>);
-    static_assert(ex::sender<decltype(ex::just(42) | forge::bulk(0, each_index{}))>);
-    static_assert(ex::sender<decltype(forge::bulk_chunked(ex::just(42), 0, each_chunk{}))>);
-    static_assert(ex::sender<decltype(ex::just(42) | forge::bulk_chunked(0, each_chunk{}))>);
-    static_assert(ex::sender<decltype(forge::bulk_unchunked(ex::just(42), 0, each_index{}))>);
-    static_assert(ex::sender<decltype(ex::just(42) | forge::bulk_unchunked(0, each_index{}))>);
+    static_assert(ex::sender<decltype(test_bulk::bulk(ex::just(42), 0, each_index{}))>);
+    static_assert(ex::sender<decltype(ex::just(42) | test_bulk::bulk(0, each_index{}))>);
+    static_assert(ex::sender<decltype(test_bulk::bulk_chunked(ex::just(42), 0, each_chunk{}))>);
+    static_assert(ex::sender<decltype(ex::just(42) | test_bulk::bulk_chunked(0, each_chunk{}))>);
+    static_assert(ex::sender<decltype(test_bulk::bulk_unchunked(ex::just(42), 0, each_index{}))>);
+    static_assert(ex::sender<decltype(ex::just(42) | test_bulk::bulk_unchunked(0, each_index{}))>);
 #if FORGE_TEST_BULK_HAS_NATIVE_POLICIES
     static_assert(ex::sender<decltype(ex::bulk(ex::just(42), ex::seq, 0, each_index{}))>);
     static_assert(ex::sender<decltype(ex::just(42) | ex::bulk(ex::seq, 0, each_index{}))>);
@@ -154,9 +154,9 @@ int main() {
     std::inplace_stop_source stop_source;
     stop_source.request_stop();
     auto stop_env = ex::prop{std::get_stop_token, stop_source.get_token()};
-    const auto with_stop = forge::sync_wait(ex::write_env(
+    const auto with_stop = std::this_thread::sync_wait(ex::write_env(
         read_stop_in_successor() | stop_flags, stop_env));
-    const auto without_stop = forge::sync_wait(ex::write_env(
+    const auto without_stop = std::this_thread::sync_wait(ex::write_env(
         ex::unstoppable(read_stop_in_successor()) | stop_flags, stop_env));
 
     const bool simple_scope_ok = scope_closes_and_joins<ex::simple_counting_scope>();
@@ -169,11 +169,11 @@ int main() {
            variant_value && std::get<0>(std::get<0>(*variant_value)) == 42 &&
            with_stop == std::optional{std::make_tuple(std::pair{true, true})} &&
            without_stop == std::optional{std::make_tuple(std::pair{false, false})} &&
-           forge::sync_wait(std::move(write)) &&
-           forge::sync_wait(std::move(read)) &&
-           forge::sync_wait(std::move(unstoppable)) &&
-           forge::sync_wait(std::move(variant)) &&
-           forge::sync_wait(std::move(optional)) &&
-           forge::sync_wait(std::move(full)) &&
-           forge::sync_wait(std::move(bound)) ? 0 : 1;
+           std::this_thread::sync_wait(std::move(write)) &&
+           std::this_thread::sync_wait(std::move(read)) &&
+           std::this_thread::sync_wait(std::move(unstoppable)) &&
+           std::this_thread::sync_wait(std::move(variant)) &&
+           std::this_thread::sync_wait(std::move(optional)) &&
+           std::this_thread::sync_wait(std::move(full)) &&
+           std::this_thread::sync_wait(std::move(bound)) ? 0 : 1;
 }

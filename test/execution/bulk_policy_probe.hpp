@@ -1,7 +1,8 @@
 #pragma once
 
+#include "test_bulk.hpp"
+
 #include <execution>
-#include <forge/bulk.hpp>
 
 #include <array>
 #include <concepts>
@@ -136,7 +137,7 @@ struct callback<true> {
     }
 };
 
-// Rebind only the policy capture of the public closure's type, so these
+// Rebind only the policy capture of the serial test seam's closure, so these
 // implementation-policy controls need no std trait specializations and do not
 // name the outer implementation template (whose parameters may change).
 template<class Bound, class Policy>
@@ -145,13 +146,13 @@ template<template<class, class> class Bound, class OldPolicy, class Shape, class
 struct rebind_policy<Bound<OldPolicy, Shape>, Policy> { using type = Bound<Policy, Shape>; };
 template<bool Chunked>
 inline constexpr auto serial_bulk = [] {
-    if constexpr (Chunked) return forge::bulk_chunked;
-    else return forge::bulk_unchunked;
+    if constexpr (Chunked) return test_bulk::bulk_chunked;
+    else return test_bulk::bulk_unchunked;
 }();
 template<bool Chunked>
-using public_bound_t = decltype(serial_bulk<Chunked>(int{}, callback<Chunked>{}));
+using serial_bound_t = decltype(serial_bulk<Chunked>(int{}, callback<Chunked>{}));
 template<bool Chunked, class Policy>
-using bound_t = typename rebind_policy<public_bound_t<Chunked>, Policy>::type;
+using bound_t = typename rebind_policy<serial_bound_t<Chunked>, Policy>::type;
 
 using source_t = decltype(ex::just(10));
 

@@ -1,4 +1,4 @@
-#include <forge/bulk.hpp>
+#include "test_bulk.hpp"
 #include <execution>
 
 #include <concepts>
@@ -131,28 +131,28 @@ static_assert(continuation_matrix<throwing_move_callback, true, true, true, true
 
 using bulk_fn = copyable_callback<false>;
 static_assert(std::copy_constructible<bulk_fn>);
-static_assert(matches_cvref<decltype(forge::bulk(3, bulk_fn{})), true, true, true, true>);
-static_assert(matches_cvref<decltype(forge::bulk_unchunked(3, bulk_fn{})), true, true, true, true>);
-static_assert(matches_cvref<decltype(forge::bulk_chunked(3, bulk_fn{})), true, true, true, true>);
+static_assert(matches_cvref<decltype(test_bulk::bulk(3, bulk_fn{})), true, true, true, true>);
+static_assert(matches_cvref<decltype(test_bulk::bulk_unchunked(3, bulk_fn{})), true, true, true, true>);
+static_assert(matches_cvref<decltype(test_bulk::bulk_chunked(3, bulk_fn{})), true, true, true, true>);
 using throwing_bulk_fn = throwing_move_callback<false>;
 static_assert(std::copy_constructible<throwing_bulk_fn>);
 static_assert(!std::is_nothrow_move_constructible_v<throwing_bulk_fn>);
-static_assert(matches_cvref<decltype(forge::bulk(3, throwing_bulk_fn{})), true, true, true, true>);
-static_assert(matches_cvref<decltype(forge::bulk_unchunked(3, throwing_bulk_fn{})), true, true, true, true>);
-static_assert(matches_cvref<decltype(forge::bulk_chunked(3, throwing_bulk_fn{})), true, true, true, true>);
+static_assert(matches_cvref<decltype(test_bulk::bulk(3, throwing_bulk_fn{})), true, true, true, true>);
+static_assert(matches_cvref<decltype(test_bulk::bulk_unchunked(3, throwing_bulk_fn{})), true, true, true, true>);
+static_assert(matches_cvref<decltype(test_bulk::bulk_chunked(3, throwing_bulk_fn{})), true, true, true, true>);
 
 template<class Fn>
 concept accepts_bulk_factories = requires(Fn&& fn) {
-    forge::bulk(3, static_cast<Fn&&>(fn));
-    forge::bulk_unchunked(3, static_cast<Fn&&>(fn));
-    forge::bulk_chunked(3, static_cast<Fn&&>(fn));
+    test_bulk::bulk(3, static_cast<Fn&&>(fn));
+    test_bulk::bulk_unchunked(3, static_cast<Fn&&>(fn));
+    test_bulk::bulk_chunked(3, static_cast<Fn&&>(fn));
 };
 
 template<class Fn>
 concept rejects_bulk_factories =
-    !requires(Fn&& fn) { forge::bulk(3, static_cast<Fn&&>(fn)); } &&
-    !requires(Fn&& fn) { forge::bulk_unchunked(3, static_cast<Fn&&>(fn)); } &&
-    !requires(Fn&& fn) { forge::bulk_chunked(3, static_cast<Fn&&>(fn)); };
+    !requires(Fn&& fn) { test_bulk::bulk(3, static_cast<Fn&&>(fn)); } &&
+    !requires(Fn&& fn) { test_bulk::bulk_unchunked(3, static_cast<Fn&&>(fn)); } &&
+    !requires(Fn&& fn) { test_bulk::bulk_chunked(3, static_cast<Fn&&>(fn)); };
 
 static_assert(accepts_bulk_factories<bulk_fn>);
 static_assert(rejects_bulk_factories<move_only_callback<false>>);

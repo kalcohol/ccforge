@@ -1,4 +1,4 @@
-#include <forge/bulk.hpp>
+#include "test_bulk.hpp"
 #include "../sender_adaptor_closure_probe.hpp"
 
 #include <functional>
@@ -216,9 +216,9 @@ static_assert(public_base<decltype(ex::upon_stopped([] { return 1; }))>);
 static_assert(public_base<decltype(ex::let_value([](int n) { return ex::just(n); }))>);
 static_assert(public_base<decltype(ex::let_error([](int n) { return ex::just(n); }))>);
 static_assert(public_base<decltype(ex::let_stopped([] { return ex::just(1); }))>);
-static_assert(public_base<decltype(forge::bulk(3, [](int, int&) {}))>);
-static_assert(public_base<decltype(forge::bulk_unchunked(3, [](int, int&) {}))>);
-static_assert(public_base<decltype(forge::bulk_chunked(3, [](int, int, int&) {}))>);
+static_assert(public_base<decltype(test_bulk::bulk(3, [](int, int&) {}))>);
+static_assert(public_base<decltype(test_bulk::bulk_unchunked(3, [](int, int&) {}))>);
+static_assert(public_base<decltype(test_bulk::bulk_chunked(3, [](int, int, int&) {}))>);
 static_assert(public_base<decltype(ex::stopped_as_error(1))>);
 static_assert(public_base<decltype(ex::stopped_as_optional)>);
 static_assert(public_base<decltype(ex::into_variant)>);

@@ -1,4 +1,4 @@
-#include <forge/bulk.hpp>
+#include "test_bulk.hpp"
 #include <execution>
 
 #include <exception>
@@ -67,11 +67,11 @@ static_assert(nothrow_connect<decltype(ex::read_env(std::get_stop_token))>);
 static_assert(nothrow_connect<decltype(ex::then(ex::just(1), identity{}))>);
 static_assert(nothrow_connect<decltype(ex::upon_error(ex::just_error(1), identity{}))>);
 static_assert(nothrow_connect<decltype(ex::upon_stopped(ex::just_stopped(), nullary{}))>);
-static_assert(nothrow_connect<decltype(forge::bulk_chunked(ex::just(1), 3, chunk_fn{}))>);
-static_assert(nothrow_connect<decltype(forge::bulk_unchunked(ex::just(1), 3, bulk_fn{}))>);
+static_assert(nothrow_connect<decltype(test_bulk::bulk_chunked(ex::just(1), 3, chunk_fn{}))>);
+static_assert(nothrow_connect<decltype(test_bulk::bulk_unchunked(ex::just(1), 3, bulk_fn{}))>);
 static_assert(nothrow_connect<decltype(ex::into_variant(ex::just(1)))>);
 static_assert(!nothrow_connect<decltype(ex::just(throwing_move{}))>);
-static_assert(!nothrow_connect<decltype(forge::bulk(ex::just(1), 3, bulk_fn{}))>);
+static_assert(!nothrow_connect<decltype(test_bulk::bulk(ex::just(1), 3, bulk_fn{}))>);
 static_assert(!nothrow_connect<decltype(ex::let_value(ex::just(1), successor{}))>);
 static_assert(!nothrow_connect<decltype(ex::when_all(ex::just()))>);
 static_assert(!nothrow_connect<decltype(ex::starts_on(ex::inline_scheduler{}, ex::just()))>);
@@ -132,11 +132,11 @@ static_assert(!ex::sender_in<decltype(ex::upon_error(ex::just_error(1), wrong{})
 static_assert(!ex::sender_in<decltype(ex::upon_stopped(ex::just_stopped(), wrong{}))>);
 static_assert(!ex::sender_in<decltype(ex::let_value(ex::just(1), wrong{}))>);
 static_assert(!ex::sender_in<decltype(ex::let_value(ex::just(1), invalid_successor{}))>);
-static_assert(ex::sender_in<decltype(forge::bulk_chunked(ex::just(1), 3, chunk_fn{}))>);
-static_assert(!ex::sender_in<decltype(forge::bulk_chunked(ex::just(1), 3, bulk_fn{}))>);
-static_assert(ex::sender_in<decltype(forge::bulk_unchunked(ex::just(1), 3, bulk_fn{}))>);
-static_assert(!ex::sender_in<decltype(forge::bulk_unchunked(ex::just(1), 3, chunk_fn{}))>);
-static_assert(!ex::sender_in<decltype(forge::bulk(ex::just(1), 3, chunk_fn{}))>);
+static_assert(ex::sender_in<decltype(test_bulk::bulk_chunked(ex::just(1), 3, chunk_fn{}))>);
+static_assert(!ex::sender_in<decltype(test_bulk::bulk_chunked(ex::just(1), 3, bulk_fn{}))>);
+static_assert(ex::sender_in<decltype(test_bulk::bulk_unchunked(ex::just(1), 3, bulk_fn{}))>);
+static_assert(!ex::sender_in<decltype(test_bulk::bulk_unchunked(ex::just(1), 3, chunk_fn{}))>);
+static_assert(!ex::sender_in<decltype(test_bulk::bulk(ex::just(1), 3, chunk_fn{}))>);
 using uncopyable_value = signature_sender<ex::set_value_t(immovable&)>;
 using uncopyable_error = signature_sender<ex::set_error_t(immovable&)>;
 static_assert(!ex::sender_in<decltype(ex::into_variant(uncopyable_value{}))>);
@@ -148,7 +148,7 @@ static_assert(!connectable<decltype(ex::then(ex::just(1), wrong{}))>);
 static_assert(!connectable<decltype(ex::upon_error(ex::just_error(1), wrong{}))>);
 static_assert(!connectable<decltype(ex::upon_stopped(ex::just_stopped(), wrong{}))>);
 static_assert(!connectable<decltype(ex::let_value(ex::just(1), invalid_successor{}))>);
-static_assert(!connectable<decltype(forge::bulk_chunked(ex::just(1), 3, bulk_fn{}))>);
+static_assert(!connectable<decltype(test_bulk::bulk_chunked(ex::just(1), 3, bulk_fn{}))>);
 static_assert(!connectable<decltype(ex::into_variant(uncopyable_value{}))>);
 
 using missing = decltype(ex::read_env(std::get_allocator));
@@ -158,7 +158,7 @@ struct any_sender { template<class... As> auto operator()(As&&...) const noexcep
 static_assert(!ex::sender_in<decltype(ex::then(missing{}, any_function{}))>);
 static_assert(!ex::sender_in<decltype(ex::upon_error(missing{}, any_function{}))>);
 static_assert(!ex::sender_in<decltype(ex::let_value(missing{}, any_sender{}))>);
-static_assert(!ex::sender_in<decltype(forge::bulk(missing{}, 3, any_function{}))>);
+static_assert(!ex::sender_in<decltype(test_bulk::bulk(missing{}, 3, any_function{}))>);
 static_assert(!ex::sender_in<decltype(ex::into_variant(missing{}))>);
 static_assert(!ex::sender_in<decltype(ex::write_env(missing{}, ex::env<>{}))>);
 static_assert(!ex::sender_in<decltype(ex::stopped_as_error(missing{}, 1))>);
@@ -174,9 +174,9 @@ static_assert(ex::sender_in<value_only>);
 using no_connect_then = decltype(ex::then(value_only{}, identity{}));
 using no_connect_error = decltype(ex::upon_error(error_only{}, identity{}));
 using no_connect_stopped = decltype(ex::upon_stopped(stopped_only{}, nullary{}));
-using no_connect_bulk = decltype(forge::bulk_unchunked(value_only{}, 3, bulk_fn{}));
-using no_connect_chunked = decltype(forge::bulk_chunked(value_only{}, 3, chunk_fn{}));
-using no_connect_transformed = decltype(forge::bulk(value_only{}, 3, bulk_fn{}));
+using no_connect_bulk = decltype(test_bulk::bulk_unchunked(value_only{}, 3, bulk_fn{}));
+using no_connect_chunked = decltype(test_bulk::bulk_chunked(value_only{}, 3, chunk_fn{}));
+using no_connect_transformed = decltype(test_bulk::bulk(value_only{}, 3, bulk_fn{}));
 using no_connect_let = decltype(ex::let_value(value_only{}, successor{}));
 using no_connect_let_error = decltype(ex::let_error(error_only{}, successor{}));
 using no_connect_let_stopped = decltype(ex::let_stopped(stopped_only{}, stopped_successor{}));
@@ -208,9 +208,9 @@ static_assert(signatures_without_connection<no_connect_continues>);
 static_assert(connectable<decltype(ex::then(ex::just(1), identity{}))>);
 static_assert(connectable<decltype(ex::upon_error(ex::just_error(1), identity{}))>);
 static_assert(connectable<decltype(ex::upon_stopped(ex::just_stopped(), nullary{}))>);
-static_assert(connectable<decltype(forge::bulk_chunked(ex::just(1), 3, chunk_fn{}))>);
-static_assert(connectable<decltype(forge::bulk_unchunked(ex::just(1), 3, bulk_fn{}))>);
-static_assert(connectable<decltype(forge::bulk(ex::just(1), 3, bulk_fn{}))>);
+static_assert(connectable<decltype(test_bulk::bulk_chunked(ex::just(1), 3, chunk_fn{}))>);
+static_assert(connectable<decltype(test_bulk::bulk_unchunked(ex::just(1), 3, bulk_fn{}))>);
+static_assert(connectable<decltype(test_bulk::bulk(ex::just(1), 3, bulk_fn{}))>);
 static_assert(connectable<decltype(ex::let_value(ex::just(1), successor{}))>);
 static_assert(connectable<decltype(ex::let_error(ex::just_error(1), successor{}))>);
 static_assert(connectable<decltype(ex::let_stopped(ex::just_stopped(), stopped_successor{}))>);
@@ -296,7 +296,7 @@ static_assert(ex::sender_in<local, environment>);
 static_assert(!ex::sender_in<decltype(ex::then(local{}, identity{})), environment>);
 static_assert(ex::sender_in<decltype(ex::then(forwarded{}, identity{})), environment>);
 static_assert(!ex::sender_in<decltype(ex::upon_error(local{}, identity{})), environment>);
-static_assert(!ex::sender_in<decltype(forge::bulk(local{}, 3, bulk_fn{})), environment>);
+static_assert(!ex::sender_in<decltype(test_bulk::bulk(local{}, 3, bulk_fn{})), environment>);
 static_assert(!ex::sender_in<decltype(ex::into_variant(local{})), environment>);
 static_assert(!ex::sender_in<decltype(ex::stopped_as_optional(local{})), environment>);
 static_assert(!ex::sender_in<decltype(ex::starts_on(ex::inline_scheduler{}, local{})), environment>);
@@ -317,8 +317,8 @@ using copy_error = decltype(ex::just_error(allocator_copy_data{}));
 using nested_then = decltype(ex::then(std::declval<copy_child>(), any_function{}));
 using nested_error = decltype(ex::upon_error(std::declval<copy_error>(), any_function{}));
 using nested_stopped = decltype(ex::upon_stopped(std::declval<copy_child>(), nullary{}));
-using nested_bulk = decltype(forge::bulk_unchunked(std::declval<copy_child>(), 1, any_function{}));
-using nested_chunked = decltype(forge::bulk_chunked(std::declval<copy_child>(), 1, any_function{}));
+using nested_bulk = decltype(test_bulk::bulk_unchunked(std::declval<copy_child>(), 1, any_function{}));
+using nested_chunked = decltype(test_bulk::bulk_chunked(std::declval<copy_child>(), 1, any_function{}));
 using nested_variant = decltype(ex::into_variant(std::declval<copy_child>()));
 using nested_write = decltype(ex::write_env(std::declval<copy_child>(), ex::env<>{}));
 using nested_departure = decltype(ex::schedule_from(std::declval<copy_child>()));
@@ -356,8 +356,8 @@ struct pass_value { template<class T> T operator()(T v) const noexcept { return 
 using category_then = decltype(ex::then(category_child{}, pass_value{}));
 using category_error = decltype(ex::upon_error(category_child{}, any_function{}));
 using category_stopped = decltype(ex::upon_stopped(category_child{}, nullary{}));
-using category_bulk = decltype(forge::bulk_unchunked(category_child{}, 1, any_function{}));
-using category_chunked = decltype(forge::bulk_chunked(category_child{}, 1, any_function{}));
+using category_bulk = decltype(test_bulk::bulk_unchunked(category_child{}, 1, any_function{}));
+using category_chunked = decltype(test_bulk::bulk_chunked(category_child{}, 1, any_function{}));
 using category_write = decltype(ex::write_env(category_child{}, ex::env<>{}));
 using category_departure = decltype(ex::schedule_from(category_child{}));
 template<class S>

@@ -1,7 +1,7 @@
 #include "../scheduler_fixture.hpp"
 
-#include <forge/bulk.hpp>
-#include <forge/execution_extensions.hpp>
+#include "test_bulk.hpp"
+#include <execution>
 
 #include "../bulk_policy_probe.hpp"
 
@@ -165,19 +165,19 @@ constexpr bool rejects_serial_forms =
     !explicit_serial_call<Standard, Function> &&
     !explicit_serial_bind<Standard, Function>;
 
-template<class Forge, class Function>
+template<class Serial, class Function>
 constexpr bool accepts_serial_forms =
-    std::invocable<Forge, source, int, Function> &&
-    pipeable<source, std::invoke_result_t<Forge, int, Function>> &&
-    explicit_serial_call<Forge, Function> &&
-    explicit_serial_bind<Forge, Function>;
+    std::invocable<Serial, source, int, Function> &&
+    pipeable<source, std::invoke_result_t<Serial, int, Function>> &&
+    explicit_serial_call<Serial, Function> &&
+    explicit_serial_bind<Serial, Function>;
 
 static_assert(rejects_serial_forms<decltype(ex::bulk), each_index>);
 static_assert(rejects_serial_forms<decltype(ex::bulk_chunked), each_chunk>);
 static_assert(rejects_serial_forms<decltype(ex::bulk_unchunked), each_index>);
-static_assert(accepts_serial_forms<decltype(forge::bulk), each_index>);
-static_assert(accepts_serial_forms<decltype(forge::bulk_chunked), each_chunk>);
-static_assert(accepts_serial_forms<decltype(forge::bulk_unchunked), each_index>);
+static_assert(accepts_serial_forms<decltype(test_bulk::bulk), each_index>);
+static_assert(accepts_serial_forms<decltype(test_bulk::bulk_chunked), each_chunk>);
+static_assert(accepts_serial_forms<decltype(test_bulk::bulk_unchunked), each_index>);
 
 template<class Fn, class Cpo>
 void check_const_shape(Cpo cpo) {
@@ -251,9 +251,9 @@ bool transforms_in_both_phases(int expected_calls) {
 } // namespace
 
 int main() {
-    check_const_shape<each_index>(forge::bulk);
-    check_const_shape<each_chunk>(forge::bulk_chunked);
-    check_const_shape<each_index>(forge::bulk_unchunked);
+    check_const_shape<each_index>(test_bulk::bulk);
+    check_const_shape<each_chunk>(test_bulk::bulk_chunked);
+    check_const_shape<each_index>(test_bulk::bulk_unchunked);
     source sndr = ex::just(42);
     const auto& identity_result = ex::default_domain::transform_sender(ex::set_value, sndr, environment{});
     // [exec.domain.default] selects the tagged customization or the default.

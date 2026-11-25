@@ -1,5 +1,4 @@
-#include <forge/bulk.hpp>
-#include <forge/execution_extensions.hpp>
+#include "test_bulk.hpp"
 #include <execution>
 #include <utility>
 
@@ -40,9 +39,9 @@ static_assert(copyable_matrix<decltype(ex::upon_stopped([] { return 1; }))>());
 static_assert(copyable_matrix<decltype(ex::let_value([](int value) { return ex::just(value); }))>());
 static_assert(copyable_matrix<decltype(ex::let_error([](int error) { return ex::just(error); }))>());
 static_assert(copyable_matrix<decltype(ex::let_stopped([] { return ex::just(1); }))>());
-static_assert(copyable_matrix<decltype(forge::bulk(3, [](int, int&) {}))>());
-static_assert(copyable_matrix<decltype(forge::bulk_unchunked(3, [](int, int&) {}))>());
-static_assert(copyable_matrix<decltype(forge::bulk_chunked(3, [](int, int, int&) {}))>());
+static_assert(copyable_matrix<decltype(test_bulk::bulk(3, [](int, int&) {}))>());
+static_assert(copyable_matrix<decltype(test_bulk::bulk_unchunked(3, [](int, int&) {}))>());
+static_assert(copyable_matrix<decltype(test_bulk::bulk_chunked(3, [](int, int, int&) {}))>());
 static_assert(copyable_matrix<decltype(ex::stopped_as_error(17))>());
 static_assert(copyable_matrix<decltype(ex::stopped_as_optional)>());
 static_assert(copyable_matrix<decltype(ex::into_variant)>());

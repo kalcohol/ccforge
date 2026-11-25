@@ -1,4 +1,4 @@
-#include <forge/bulk.hpp>
+#include "test_bulk.hpp"
 #include <forge/execution_extensions.hpp>
 #include <gtest/gtest.h>
 #include "test_execution_completion.hpp"
@@ -63,7 +63,7 @@ struct probe_sender_tag {};
 struct tag_probe_sender {
     using sender_concept = std::execution::sender_tag;
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 
@@ -85,7 +85,7 @@ struct throwing_move_receiver {
     throwing_move_receiver(throwing_move_receiver&&) noexcept(false) {}
     throwing_move_receiver& operator=(throwing_move_receiver&&) = default;
     auto get_env() const noexcept
-        -> forge::empty_env { return {}; }
+        -> std::execution::env<> { return {}; }
 };
 static_assert(!std::execution::receiver<throwing_move_receiver>,
               "receiver with throwing move ctor must be rejected");
@@ -93,7 +93,7 @@ static_assert(!std::execution::receiver<throwing_move_receiver>,
 struct final_receiver final {
     using receiver_concept = std::execution::receiver_tag;
     auto get_env() const noexcept
-        -> forge::empty_env { return {}; }
+        -> std::execution::env<> { return {}; }
 };
 static_assert(std::execution::receiver<final_receiver>,
               "final receiver must be accepted");
@@ -135,7 +135,7 @@ static_assert(std::execution::operation_state<potentially_throwing_destructor_op
 namespace {
 
 using just_int_cs_t = decltype(std::execution::get_completion_signatures(
-    std::execution::just(42), forge::empty_env{}));
+    std::execution::just(42), std::execution::env<>{}));
 using just_int_envless_cs_t = decltype(std::execution::get_completion_signatures(
     std::execution::just(42)));
 using just_int_alias_cs_t = std::execution::completion_signatures_of_t<
@@ -148,11 +148,11 @@ using just_error_types_t = std::execution::error_types_of_t<
 struct reference_value_sender {
     using sender_concept = std::execution::sender_tag;
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 
-    template<class Self, class Env = forge::empty_env>
+    template<class Self, class Env = std::execution::env<>>
     static constexpr auto get_completion_signatures() noexcept
         -> std::execution::completion_signatures<
             std::execution::set_value_t(const std::string&)> {
@@ -178,7 +178,7 @@ struct mixed_completion_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 };
@@ -200,7 +200,7 @@ struct rvalue_only_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 
@@ -264,7 +264,7 @@ struct stopped_only_receiver {
 
     void set_stopped() && noexcept {}
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 };
@@ -278,7 +278,7 @@ struct move_only_stopped_receiver {
 
     void set_stopped() && noexcept {}
 
-    auto get_env() const noexcept -> forge::empty_env {
+    auto get_env() const noexcept -> std::execution::env<> {
         return {};
     }
 };
@@ -289,20 +289,20 @@ using mixed_value_types_t =
     std::execution::value_types_of_t<mixed_completion_sender>;
 using mixed_custom_value_types_t = std::execution::value_types_of_t<
     mixed_completion_sender,
-    forge::empty_env,
+    std::execution::env<>,
     std::tuple,
     type_pack>;
 using mixed_error_types_t =
     std::execution::error_types_of_t<mixed_completion_sender>;
 using mixed_custom_error_types_t = std::execution::error_types_of_t<
     mixed_completion_sender,
-    forge::empty_env,
+    std::execution::env<>,
     type_pack>;
 using stopped_value_types_t =
     std::execution::value_types_of_t<decltype(std::execution::just_stopped())>;
 using stopped_custom_value_types_t = std::execution::value_types_of_t<
     decltype(std::execution::just_stopped()),
-    forge::empty_env,
+    std::execution::env<>,
     std::tuple,
     type_pack>;
 using adapted_rvalue_only_sender_t = decltype(std::execution::then(
@@ -317,13 +317,13 @@ using upon_stopped_rvalue_only_sender_t = decltype(std::execution::upon_stopped(
 using let_rvalue_only_sender_t = decltype(std::execution::let_value(
     rvalue_only_sender{1},
     bind_next_sender{}));
-using bulk_rvalue_only_sender_t = decltype(forge::bulk(
+using bulk_rvalue_only_sender_t = decltype(test_bulk::bulk(
     rvalue_only_sender{1},
     1,
     observe_bulk_value{}));
 using write_env_rvalue_only_sender_t = decltype(std::execution::write_env(
     rvalue_only_sender{1},
-    forge::empty_env{}));
+    std::execution::env<>{}));
 using variant_rvalue_only_sender_t = decltype(std::execution::into_variant(
     rvalue_only_sender{1}));
 using continues_on_rvalue_only_sender_t = decltype(std::execution::continues_on(
@@ -417,7 +417,7 @@ static_assert(std::execution::sends_stopped<
 
 // just_stopped() should produce completion_signatures<set_stopped_t()>.
 using just_stopped_cs_t = decltype(std::execution::get_completion_signatures(
-    std::execution::just_stopped(), forge::empty_env{}));
+    std::execution::just_stopped(), std::execution::env<>{}));
 static_assert(std::is_same_v<just_stopped_cs_t,
     std::execution::completion_signatures<std::execution::set_stopped_t()>>);
 
@@ -438,7 +438,7 @@ struct int_receiver {
     void set_error(std::exception_ptr) && noexcept {}
     void set_stopped() && noexcept {}
     auto get_env() const noexcept
-        -> forge::empty_env { return {}; }
+        -> std::execution::env<> { return {}; }
 };
 
 template<class R>
@@ -475,7 +475,7 @@ struct sync_wait_multi_value_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> std::execution::env<> { return {}; }
 
     template<std::execution::receiver R>
     auto connect(R r) && -> sync_wait_multi_value_op<R> {
@@ -517,7 +517,7 @@ struct sync_wait_empty_or_int_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> std::execution::env<> { return {}; }
 
     template<std::execution::receiver R>
     auto connect(R r) && -> sync_wait_empty_or_int_op<R> {
@@ -551,7 +551,7 @@ struct sync_wait_duplicate_value_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> std::execution::env<> { return {}; }
 
     template<std::execution::receiver R>
     auto connect(R r) && -> sync_wait_duplicate_value_op<R> {
@@ -592,7 +592,7 @@ struct sync_wait_throwing_value_sender {
         return {};
     }
 
-    auto get_env() const noexcept -> forge::empty_env { return {}; }
+    auto get_env() const noexcept -> std::execution::env<> { return {}; }
 
     template<std::execution::receiver R>
     auto connect(R r) && -> sync_wait_throwing_value_op<R> {
@@ -644,7 +644,7 @@ static_assert(!lvalue_connectable_to_int_receiver<move_only_pipeline_t>);
 } // namespace
 
 TEST(ExecutionMvpTest, JustSyncWaitSingleValue) {
-    auto result = forge::sync_wait(std::execution::just(42));
+    auto result = std::this_thread::sync_wait(std::execution::just(42));
 
     static_assert(optional_like<decltype(result)>);
     ASSERT_TRUE(static_cast<bool>(result));
@@ -656,7 +656,7 @@ TEST(ExecutionMvpTest, NonCopyableLvaluePipelineSyncWaitRequiresMove) {
     auto sndr = std::execution::just(std::make_unique<int>(42))
         | std::execution::then(deref_unique{});
 
-    auto result = forge::sync_wait(std::move(sndr));
+    auto result = std::this_thread::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
@@ -680,7 +680,7 @@ TEST(ExecutionMvpTest, NonCopyableLvaluePipelineStartsOnRequiresMove) {
         | std::execution::then(deref_unique{});
     auto sndr = std::execution::starts_on(scheduler, std::move(source));
 
-    auto result = forge::sync_wait(std::move(sndr));
+    auto result = std::this_thread::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 9);
@@ -692,7 +692,7 @@ TEST(ExecutionMvpTest, NonCopyableLvaluePipelineContinuesOnRequiresMove) {
         | std::execution::then(deref_unique{});
     auto sndr = std::execution::continues_on(std::move(source), scheduler);
 
-    auto result = forge::sync_wait(std::move(sndr));
+    auto result = std::this_thread::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 11);
@@ -703,7 +703,7 @@ TEST(ExecutionMvpTest, NonCopyableLvaluePipelineSplitRequiresMove) {
         | std::execution::then(deref_unique{});
     auto sndr = forge::split(std::move(source));
 
-    auto result = forge::sync_wait(std::move(sndr));
+    auto result = std::this_thread::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 13);
@@ -716,7 +716,7 @@ TEST(ExecutionMvpTest, NonCopyableLvaluePipelineWhenAllRequiresMove) {
         | std::execution::then(deref_unique{});
     auto sndr = std::execution::when_all(std::move(first), std::move(second));
 
-    auto result = forge::sync_wait(std::move(sndr));
+    auto result = std::this_thread::sync_wait(std::move(sndr));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 17);
@@ -724,7 +724,7 @@ TEST(ExecutionMvpTest, NonCopyableLvaluePipelineWhenAllRequiresMove) {
 }
 
 TEST(ExecutionMvpTest, JustSyncWaitMultipleValues) {
-    auto result = forge::sync_wait(std::execution::just(1, std::string("ok")));
+    auto result = std::this_thread::sync_wait(std::execution::just(1, std::string("ok")));
 
     ASSERT_TRUE(static_cast<bool>(result));
     EXPECT_EQ(std::get<0>(*result), 1);
@@ -734,8 +734,8 @@ TEST(ExecutionMvpTest, JustSyncWaitMultipleValues) {
 TEST(ExecutionMvpTest, CopyableLvalueSenderConnectsByCopy) {
     auto sender = std::execution::just(42);
 
-    auto first = forge::sync_wait(sender);
-    auto second = forge::sync_wait(sender);
+    auto first = std::this_thread::sync_wait(sender);
+    auto second = std::this_thread::sync_wait(sender);
 
     ASSERT_TRUE(first.has_value());
     ASSERT_TRUE(second.has_value());
@@ -747,7 +747,7 @@ TEST(ExecutionMvpTest, MoveOnlySenderConnectsAsRvalue) {
     auto sender = std::execution::just(std::make_unique<int>(42))
                 | std::execution::then(deref_unique{});
 
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
@@ -756,7 +756,7 @@ TEST(ExecutionMvpTest, MoveOnlySenderConnectsAsRvalue) {
 TEST(ExecutionMvpTest, TransferJustCompletesOnScheduler) {
     std::execution::inline_scheduler scheduler;
 
-    auto result = forge::sync_wait(
+    auto result = std::this_thread::sync_wait(
         forge::transfer_just(scheduler, 42));
 
     ASSERT_TRUE(result.has_value());
@@ -765,7 +765,7 @@ TEST(ExecutionMvpTest, TransferJustCompletesOnScheduler) {
 
 TEST(ExecutionMvpTest, ThenTransformsValue) {
     auto sender = std::execution::then(std::execution::just(10), [](int v) { return v + 5; });
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
 
     ASSERT_TRUE(static_cast<bool>(result));
     EXPECT_EQ(std::get<0>(*result), 15);
@@ -776,7 +776,7 @@ TEST(ExecutionMvpTest, SyncWaitDecaysReferenceValueSignatures) {
     auto sender = std::execution::just(&value)
                 | std::execution::then([](int* p) -> int& { return *p; });
 
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
 
     ASSERT_TRUE(static_cast<bool>(result));
     using tuple_t = std::remove_cvref_t<decltype(*result)>;
@@ -830,7 +830,7 @@ TEST(ExecutionMvpTest, SyncWaitWithVariantDeduplicatesDecayedTuples) {
 }
 
 TEST(ExecutionMvpTest, SyncWaitValueConstructionFailurePropagates) {
-    EXPECT_THROW((void)forge::sync_wait(sync_wait_throwing_value_sender{}),
+    EXPECT_THROW((void)std::this_thread::sync_wait(sync_wait_throwing_value_sender{}),
                  std::runtime_error);
 }
 
@@ -847,7 +847,7 @@ TEST(ExecutionMvpTest, SyncWaitMapsErrorCodeToSystemError) {
 
 TEST(ExecutionMvpTest, ThenWorksWithPipeOperator) {
     auto sender = std::execution::just(10) | std::execution::then([](int v) { return v + 7; });
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
 
     ASSERT_TRUE(static_cast<bool>(result));
     EXPECT_EQ(std::get<0>(*result), 17);
@@ -857,7 +857,7 @@ TEST(ExecutionMvpTest, ThenAcceptsRvalueOnlySourceSignatures) {
     auto sender = std::execution::then(
         rvalue_only_sender{41},
         increment_value{});
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
@@ -866,7 +866,7 @@ TEST(ExecutionMvpTest, ThenAcceptsRvalueOnlySourceSignatures) {
 TEST(ExecutionMvpTest, ThenVoidReturnBecomesEmptyTuple) {
     int observed = 0;
     auto sender = std::execution::then(std::execution::just(1), [&](int v) { observed = v; });
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
 
     ASSERT_TRUE(static_cast<bool>(result));
     EXPECT_EQ(observed, 1);
@@ -880,7 +880,7 @@ TEST(ExecutionMvpTest, ThenExceptionPropagatesViaSyncWait) {
         throw std::runtime_error("boom");
     });
 
-    EXPECT_THROW((void)forge::sync_wait(std::move(sender)), std::runtime_error);
+    EXPECT_THROW((void)std::this_thread::sync_wait(std::move(sender)), std::runtime_error);
 }
 
 TEST(ExecutionMvpTest, ThenForwardsErrorAndDoesNotCallFn) {
@@ -916,7 +916,7 @@ TEST(ExecutionMvpTest, ThenForwardsStoppedAndDoesNotCallFn) {
 TEST(ExecutionMvpTest, ThenMultiValueInput) {
     auto sender = std::execution::just(1, 2) |
                   std::execution::then([](int a, int b) { return a + b; });
-    auto result = forge::sync_wait(std::move(sender));
+    auto result = std::this_thread::sync_wait(std::move(sender));
 
     ASSERT_TRUE(static_cast<bool>(result));
     EXPECT_EQ(std::get<0>(*result), 3);

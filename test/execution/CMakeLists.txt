@@ -1,11 +1,13 @@
 set(FORGE_EXECUTION_TEST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(FORGE_EXECUTION_RUNTIME_DIR "${FORGE_EXECUTION_TEST_ROOT}/runtime")
+set(FORGE_EXECUTION_TEST_SUPPORT_DIR "${FORGE_EXECUTION_TEST_ROOT}/../support/execution")
 
 function(forge_add_execution_runtime_test target_name source_name test_name)
     forge_add_runtime_test(
         ${target_name}
         "${FORGE_EXECUTION_RUNTIME_DIR}/${source_name}"
         ${test_name} ${ARGN})
+    target_include_directories(${target_name} PRIVATE "${FORGE_EXECUTION_TEST_SUPPORT_DIR}")
     if(FORGE_TEST_TBB_LIBRARY)
         target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
     endif()
@@ -16,13 +18,16 @@ function(forge_add_execution_compile_probe target_name source_name test_name)
         ${target_name}
         "${FORGE_EXECUTION_TEST_ROOT}/compile/${source_name}"
         ${test_name} ${ARGN})
+    target_include_directories(${target_name} PRIVATE "${FORGE_EXECUTION_TEST_SUPPORT_DIR}")
     if(FORGE_TEST_TBB_LIBRARY)
         target_link_libraries(${target_name} PRIVATE ${FORGE_TEST_TBB_LIBRARY})
     endif()
 endfunction()
 
 function(forge_expect_execution_cxx_source_compiles result_var source_name should_compile failure_message)
-    set(CMAKE_REQUIRED_INCLUDES "${FORGE_EXECUTION_TEST_ROOT}/compile")
+    set(CMAKE_REQUIRED_INCLUDES
+        "${FORGE_EXECUTION_TEST_ROOT}/compile"
+        "${FORGE_EXECUTION_TEST_SUPPORT_DIR}")
     forge_expect_cxx_source_compiles(
         ${result_var}
         "${FORGE_EXECUTION_TEST_ROOT}/compile/${source_name}"
