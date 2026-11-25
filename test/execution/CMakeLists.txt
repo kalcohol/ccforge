@@ -316,6 +316,10 @@ forge_add_execution_runtime_test(
     test_execution_inline_scheduler
     test_execution_inline_scheduler.cpp
     execution_inline_scheduler)
+forge_add_execution_runtime_test(
+    test_execution_test_thread_pool
+    test_execution_test_thread_pool.cpp
+    execution_test_thread_pool OWNER STD)
 forge_add_execution_runtime_test(test_execution_stop_token test_execution_stop_token.cpp execution_stop_token)
 forge_add_execution_runtime_test(test_stop_intrusive
     test_execution_stop_intrusive.cpp execution_stop_intrusive)
