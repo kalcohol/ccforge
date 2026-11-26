@@ -86,6 +86,45 @@
 //     signatures and connect. The counting_scope stop wrapper takes the query
 //     tag by value and forwards it as a non-const lvalue. See the D3 static
 //     adaptor and counting_scope entries under actual query classification.
+//   - D3b.3: then, upon_*, bulk*, into_variant, stopped_as_*, write_env,
+//     unstoppable and schedule_from compute their completion attributes per
+//     [exec.snd.general]/3-4 in the environment their child is connected
+//     with: the domain of a possible tag is COMMON-DOMAIN of every completion
+//     that can deliver it, a scheduler is reported when one site delivers it,
+//     and an impossible tag has no answer. Queries take one environment;
+//     there are no unary completion members. The public CPOs are unchanged.
+//     Deviations and limits:
+//     - A chain of these adaptors is evaluated as a whole against the first
+//       sender below it that is not one of them: its public answers and
+//       signatures are used directly, and nested adaptors are walked through
+//       their channel tables instead of being asked. COMMON-DOMAIN is taken
+//       once over that sender's contributing completions, not nested.
+//     - No callable is instantiated by a query. Every combination of
+//       throwing and non-throwing adaptors is considered and an answer is
+//       given only when all agree; a tag that exists only if something
+//       throws has no answer.
+//     - A scheduler is withheld when the public CPO would resolve it to
+//       another type or resource, or could obtain it only by moving from a
+//       borrowed object.
+//     - Attributes describe the sender as written. If a domain's
+//       transform_sender replaces an adaptor at connect and changes its
+//       completion channels, that adaptor's attributes, and those of
+//       adaptors above it, do not follow the replacement.
+//     - write_env's attributes are FWD-ENV(get_env(child)) as
+//       [exec.adapt.general]/3.2 says; before D3b.3 they were the child's
+//       attributes themselves, including non-forwarding queries.
+//   - Known-incorrect completion attributes, unchanged by D3b.3 and now also
+//     visible through the adaptors above: continues_on names its destination
+//     for stopped, and for error unless the destination's schedule sender can
+//     itself fail, although a rejecting destination completes in place; let_*,
+//     starts_on and closure-form on forward their child's answers across a
+//     change of site (LWG 4419); associate forwards the wrapped sender's
+//     stopped answer although rejection completes in start; the counting
+//     scope wrapper answers for the outer environment, not its stop overlay;
+//     the run-loop schedule sender reports domains for impossible tags. See
+//     the D3b.3 ledger entry for the target batches.
+//   - into_variant constructs the tuple in place, so its signatures have no
+//     error for a potentially throwing move of the constructed tuple.
 //   - stopped_as_optional defers its creation Mandate to the actual environment.
 //     See "stopped_as_optional, stopped_as_error".
 //   - GET-AWAITER is emulated, the awaitable connect operation is movable, and

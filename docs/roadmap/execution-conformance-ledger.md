@@ -77,7 +77,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `simple_counting_scope`, `counting_scope` | Implemented current-WD-shaped subset | `join()` 的 schedule operation 为 typed 普通成员。counting token wrap 的 operation 只持有 receiver 和 child operation；按 `[exec.stop.when]` 暴露的融合 token 只保存两个输入 token，stop queries 返回逻辑或，仅 `FWD-ENV` queries 可穿过 wrapper。每个 child `callback_type<Fn>` 直接使用两个输入各自的 `stop_callback_for_t`，atomic exchange 保证并发停止时也至多调用一次；发布 registration 前先查询逻辑 token，任一输入已停止时在构造线程立即调用，后续停止由底层 registration 捕获。两个 registration 先于 `Fn` 析构，trampoline 调用 `Fn` 后不访问已可能销毁的 storage，child 管理 callback lifetime 和注册失败；wrapper 原样转发 completion，不合成 stopped 或额外 signature。一个 child callback 对应两个输入 registration；inplace 输入的 registration 均零分配，无其他融合状态分配。输入 source owner 须覆盖全部 stop 调用；completion 前注销 receiver registration，source lifetime 边界详见设计记录。sender、scheduler、receiver、environment queries、decayed 结果构造及自定义 stop-token callbacks 自行分配的内存另计。destructor、join 和 disassociation 顺序保持。 token.wrap 接受 awaitable，停止融合与 association 协议不变；child connect 的全局 frame allocation 另计。 |
 | `as_awaitable`, `with_awaitable_senders` | Implemented current-WD-shaped subset | `as_awaitable` 按 direct member、transformed/adapted member、普通 awaiter、transformed/adapted sender bridge、identity fallback 的顺序分派；普通 awaiter 覆盖直接 awaiter、member/free `operator co_await`，completion adaptor 缺失时按 identity 处理。Sender bridge 对零值、单值和单一多参数 value completion 分别返回 `void`、该值类型和 `tuple<...>`；按原 sender 表达式类别检查 value signatures，多个 signatures 即使 decay 后相同也不合并。有多个 alternatives 的 sender 不进入 transformed member 或 sender bridge 分支。`with_awaitable_senders` 提供 current-WD-shaped continuation / stopped 传播。 direct member 结果有 awaitable Mandate，7.2 noexcept 按实际表达式；prepared sender 在 receiver 实际环境要求 receiver-of，无 unhandled_stopped 的 promise 不可接收 stopped。Mixin 有 class-type 约束，handler 按表达式存在性检测。receiver 直接暴露 promise env 属 WD latitude。保留 deferred connect、symmetric transfer 与 prepared 多值 identity fallback。Bridge 的 CTAD 要求 prepared sender 是右值，普通 awaiter 分支共用 GET-AWAITER emulation。 |
 | Ordinary awaitable as sender | Implemented current-WD-shaped subset | marker-first private enable-sender concept 保留 user specialization；domain transform / member signatures 后按 await-result 合成 value、exception_ptr 与 stopped signatures（无环境时无 await_transform）。connect 的 direct / transformed / noexcept 路径均支持 awaitable fallback，frame 全局分配，operation noexcept move 转移 handle 并清空源；完成在挂起 frame 的 await_suspend 内交付并允许 receiver 自毁。GET-AWAITER 为受约束的 member / ADL emulation，竞争候选保守拒绝；不是编译器内建 await-expression 反射。内部 completion awaiter 为局部类，排除 user receiver/value ADL。若类型兼具有效 awaiter 方法与 deleted/inaccessible/ambiguous 的 co_await operator，probe 将 operator 视作缺失，类型可满足 sender，但实际 await/connect 为 ill-formed（已接受 emulation 边界）。 |
-| `schedule_from` | Implemented current-WD-shaped subset | 单参数 CPO 构造 departure marker，product access 暴露 schedule_from_t；attributes、child receiver 与 signatures 采用 FWD-ENV，保留引用身份与值所有权，const-lvalue 直接连接同类别 child；无独立结果缓冲。continues_on 经该 marker 允许 source domain 定制 departure；generic child operation immovability 仍依赖 child connect 契约。 |
+| `schedule_from` | Implemented current-WD-shaped subset | 单参数 CPO 构造 departure marker，product access 暴露 schedule_from_t；普通 attributes、child receiver 与 signatures 采用 FWD-ENV，保留引用身份与值所有权；completion 查询按 D3b.3 的单 child adaptor 规则在该 FWD-ENV 中回答；const-lvalue 直接连接同类别 child；无独立结果缓冲。continues_on 经该 marker 允许 source domain 定制 departure；generic child operation immovability 仍依赖 child connect 契约。 |
 | `transform_sender`, `apply_sender` | Implemented current-WD-shaped subset | 公开入口为受约束函数模板，支持显式模板实参与 ADL；default_domain 标准成员限制 sender / queryable，默认左值结果保留引用；`connect` 对原始 source 类别应用相同的 `sender` 约束。transform 仍依次递归应用 completion / start domain；apply 采用 explicit-domain-first、algorithm-tag fallback。两个阶段均只识别带 tag 的 domain transform；缺失时调用默认变换。 |
 | `affine` | Implemented subset | `affine.hpp`；签名与 connect 要求环境提供 infallible start scheduler。有效时按 child 值类别优先选择 .affine()，否则以 continues_on 和转发全部 scheduler queries 的 unstoppable wrapper 保留多 value shapes；connect 仍 potentially throwing。未为 library senders 添加可选 .affine() 成员。Forge pool/strand 在所有环境声明 value/stopped；仅 stoppable token 环境满足 infallible-scheduler，env<>（无 start scheduler）及无 stop token / never_stop_token 的 start 环境均不满足 sender_in。Wrapper 按 &、const&、&& 转发 schedule 类别，mutable-only schedule 可用；签名与 connect 对四种 child cv/ref 选择相同定制。 |
 | `env`, `prop` | Implemented query surface subset | `prop` 的 const variadic query、tag holder 与 value 两元素 aggregate 形状及花括号/圆括号两参数 CTAD 保留，含函数模板内非依赖表达式与 reference_wrapper 解包；holder 删除拷贝/移动赋值，对 const 可赋值 tag 也生效，空 tag 不增加大小。callable Mandate 因 schedule attributes 使用 prop 时递归触发 scheduler concept 而暂缓；两模板均不可赋值，保留所需的拷贝/移动构造。`env` 参数使用等价于 `std::destructible` 的内部 queryable 约束；显式 guide 使用 `template<__forge_queryable... Envs>` 以保证 Clang 的 reference_wrapper 解包，WD 的 `template<class... Envs>` 与此写法无可观察差异，非 queryable 类型本就不能形成 env。借用 referent 的 cv/ref、查询返回引用及底层条件 noexcept 保留。子环境按声明顺序选首个能回答具名 query 的成员。 |
@@ -266,16 +266,88 @@ Sender attributes 的转发视图保留 `get_env(sndr)` 的确切类型（引用
   [P3826R5 §5.3](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3826r5.html)
   的 `starts_on(gpu, just()) | then(fn)` 例子要求 `just` 公布所提供环境的 domain，
   这是后续 factory attributes 的意图依据。
-- 批次 D3b.2 的 factory attributes 延后，与 D3b.3 和 D3b.4 的 adaptor 改动一并落地。
-  现有 adaptor 转发 child attributes，直接引入 factory 答案会暴露三类问题：报告错误的
-  completion 位置、公布已被 adaptor 消除的 completion channel，以及在错误的环境中查询。
-- 后续计划（D3b 设计评审 §D；审查记录保存在仓库之外）：D3b.2–D3b.4 合并为一批落地，
-  D3b.3 按输出 channel 计算普通 adaptor 的 attributes，D3b.4 处理 `let_*`、
-  `continues_on`、`on`/`starts_on` 与 `affine` 等嵌套和调度算法，并修复环境值类别中
-  可恢复的丢失；D3b.5 做集成与 native handoff 测试。D3c 对锁定的 producer
-  （`when_all`、`associate`、`spawn_future`、`counting_scope`）、Forge producer 与
-  wait 调用方逐项验证，锁定头文件的改动伴随正式重新认证，最后两个 wait 消费者
-  一并改用精确的 completion domain。
+- 批次 D3b.3 已解决单 child adaptor 的 completion attributes：`then`、`upon_*`、`bulk*`、
+  `into_variant`、`stopped_as_*`、`write_env`（含 `unstoppable`）及 `schedule_from` 按
+  `[exec.snd.general]/3–4` 与 `[exec.adapt.general]/3.2`，由 child 的公开回答（公开 CPO
+  作用于 child 的 attributes，环境为 child 实际连接的环境）逐输出 tag 计算。验收准则是
+  **组合意义下的局部正确**：
+  - 可能产生的 tag，其 domain 是所有可能交付它的 child completion 的 COMMON-DOMAIN，
+    包括 adaptor 自己引入的位置（恢复的 error/stopped、转换出的 error）；所有这些
+    completion 来自同一个位置时才回答 scheduler；不可能产生的 tag 没有回答。
+  - 查询不会在 `connect` 以同样的 sender 类别和环境不会出错的地方出错，也不为回答查询
+    而实例化用户 callback：嵌套的 adaptor 按各自的边表结构化地遍历，不请求它们的
+    signatures。
+  - 查询不移动、不修改、不重新解析借来的对象；scheduler 仅在公开 CPO 的再次解析得到
+    同一类型和资源时公布，否则不回答。
+  - 普通转发查询（含显式的 void customization-domain 查询）及 attributes 的拥有或借用方式
+    不变；没有 unary completion 成员；公开的 completion CPO 未改动。
+  - adaptor 的 value domain 按草案公布（COMMON-DOMAIN），`connect` 据此选择 completion
+    domain，late customization 与 D3b.3 之前相同。
+- D3b.3 的实现方式与由此保留的偏差：
+  - **整条链对 origin 求值（负责人决定 3 的私有例外）。** 一串连续的此类 adaptor 不逐层
+    询问嵌套 adaptor 的公开回答，而是按各自的 channel 表结构化地遍历到 origin（它下面
+    第一个不属于这些 adaptor 的 sender），直接使用 origin 的公开回答和 signatures。这样
+    才能既不实例化 callback，又让 `schedule | then(f) | upon_error(g)` 这样的链有回答。
+    domain 是对 origin 中所有可能交付该输出的 completion 一次性取的 COMMON-DOMAIN；
+    草案逐层取，两者对按集合合并的 domain（含 `indeterminate_domain`）相同，对自定义了
+    不满足结合律的 `common_type` 的 domain 可能不同。scheduler 的值仍经各层公开 CPO 取得。
+  - **抛出与否按组合枚举。** 链上每个 adaptor 的本地操作抛出与不抛出的每一种组合，对
+    某个输出都给出一组 origin completion；所有组合中该输出都存在且 COMMON-DOMAIN 相同
+    时才回答 domain，所有组合中都只有同一个 origin completion 时才回答 scheduler。
+  - **attributes 描述写出来的 sender。** domain 的 `transform_sender` 在连接时把某个
+    adaptor 换成 completion channel 不同的 sender 之后，该 adaptor 及其上方 adaptor 的
+    attributes 不跟随替换：被换成只会 stopped 的 `then` 仍回答 value，包在它外面的
+    `schedule_from` 也是。这与草案按 child 公开回答推导的结果一致，但对被替换的 sender
+    并不精确；需要精确回答的 domain 应同时让被替换的 sender 提供自己的 attributes。
+  - **`write_env` 的普通查询。** 其 attributes 改为 `FWD-ENV(get_env(child))`
+    （`[exec.adapt.general]/3.2`）。此前直接返回 child 的 attributes 对象，非 forwarding
+    的查询也能穿过，`get_env(write_env(...))` 与 child 的 attributes 是同一个对象；现在
+    只有 forwarding 查询穿过，返回的是包装对象，借用的引用结果仍指向原对象。其余六个
+    adaptor 的普通查询此前就是 FWD-ENV，没有变化。
+- D3b.3 仍然没有回答、而草案有回答的情形（都是“不回答”）：
+  - 取决于 callback 或转换是否抛出的回答。查询不实例化 callback，抛出与否视为未知；
+    只在两种情况下回答相同时才给出。因此 `then(schedule(sch), f)` 的 error、`upon_error`
+    之后的 error 没有回答；child 自身有 error 且其 domain 与被拦截位置不同时，该 error
+    也没有回答。`into_variant` 与 `stopped_as_optional` 的构造异常同此处理。
+  - 公开 CPO 会把它再次解析成另一个类型或资源的 scheduler（scheduler 自身的 value 查询
+    能接受所给环境；或结果是未经解析的 scheduler operand 而它有 value 查询）、只能靠从
+    右值引用构造才能得到的 scheduler、借用的 volatile scheduler、`write_env` 的
+    allocator-aware overlay 在带 allocator 的环境下给出的 scheduler。
+  - 同一 sender 的两个 tag 即使返回相等的 scheduler 也视为两个位置，不回答 scheduler。
+  - 两个连接类别、实际环境与规范化环境各自求出的回答不同时不回答。
+  - 用户自己写的最底层 sender 一旦回答了查询，就会被请求其父 adaptor 可用的各连接类别
+    的 signatures；其 signature 计算在某个类别或环境下出错时，查询同样出错，与在该类别
+    和环境下 `connect` 相同。
+- **已知不正确的组件**（本批未改动，行为与 D3b.3 之前相同）。单 child adaptor 按上面的
+  规则如实转述 child 的回答，因此这些回答现在也会出现在它们之上的组合里，包括经恢复
+  转到另一个 tag、或只在 `write_env` 的 overlay 下才出现的回答；这属于下列组件的遗留
+  问题，不是 D3b.3 的缺陷：
+  - `continues_on`：对 stopped 回答目的 scheduler，对 error 在目的 scheduler 的 schedule
+    sender 自身不会报告 error 时也回答目的 scheduler；目的 scheduler 拒绝调度时 completion
+    在原地交付。归 D3b.4。
+  - `let_value`、`let_error`、`let_stopped`、`starts_on` 与 closure 形式的 `on`：跨越
+    completion 位置的变化原样转发 predecessor 或 child 的回答（LWG 4419）。归 D3b.4。
+  - `affine`：attributes 为空。归 D3b.4。
+  - `associate`：原样返回被包装 sender 的 attributes；association 被拒绝时 stopped 在
+    `start` 内交付。归 D3c（锁定，伴随正式重新认证）。
+  - `counting_scope` 的 token wrapper：原样返回 child 的 attributes，查询在外层环境而非
+    stop overlay 中求值。归 D3c（锁定）。
+  - run loop 的 schedule sender：对不可能的 tag 也回答 domain（单 child adaptor 按
+    signatures 过滤，直接查询时仍在）。归 D3c（锁定）。
+  - Forge 的 producer（`any_scheduler`、`static_thread_pool`、`strand`、I/O context 的
+    schedule sender 等）自行公布的 error/stopped 回答尚未逐项核对。归 D3c。
+  这些回答的消费者是 `let_*` 的 successor 环境、closure 形式 `on` 的返回 hop、两个 wait
+  和 `connect` 的 domain 选择；错误的回答导致 hop 的目的地或所选 domain 不对，不涉及
+  生命周期。
+- `into_variant` 按实际 lowering 在 variant 内原位构造 tuple；草案
+  `[exec.into.variant]/6` 先构造 tuple 再移入 variant。从引用复制元素不抛出而移动
+  tuple 会抛出时，当前实现没有由该次移动引入的 error signature。
+- 后续计划：D3b.4 处理 `let_*`、`continues_on`、`on`/`starts_on` 与 `affine`，并修复
+  环境值类别中可恢复的丢失；D3c 对锁定的 producer（`when_all`、`associate`、
+  `spawn_future`、`counting_scope`、`run_loop`，必要时 `split`）、Forge producer 与 wait
+  调用方逐项验证，锁定头文件的改动伴随正式重新认证；D3b.2 落地 factory attributes
+  （`just*`、`read_env`），D3b.5 做集成与 native handoff 测试，最后两个 wait 消费者改用
+  精确的 completion domain。
 - `[exec.sched]/1` 要求 progress 查询，而 `[exec.get.fwd.progress]/2` 又要求 scheduler；
   通过不含 progress 的内部 shape 打破循环。Inline 指定查询列表缺少 progress，仍保留显式成员。
 - Schedule sender 的 parity 与 signatures 一致性等措辞问题留待后续调度工作核对。

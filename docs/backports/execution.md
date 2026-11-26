@@ -236,7 +236,8 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   对非 volatile 的环境，签名推导与连接因此看到同一个环境视图类型。
   `on(sndr, sch, closure)` 和绑定形式的 closure 实参须满足 pipeable closure 约束。
 - `schedule_from` 是 current-WD 的单参数 departure marker sender，child attributes 与 child
-  receiver environment 均经 FWD-ENV；借用查询的引用身份不变。`continues_on`
+  receiver environment 均经 FWD-ENV；普通借用查询的引用身份不变，completion 查询按下文
+  的单 child adaptor 规则回答。`continues_on`
   通过它让 source completion domain 定制离开当前 execution resource 的方式。
   `transform_env` 已不在当前 working draft surface，因此本 backport 不暴露该旧拼写。
 - Live draft 已包含 `std::execution::task`、`task_scheduler` 和 `with_error`，但 Forge
@@ -547,6 +548,57 @@ stop token、scheduler、queryable 或 progress 结果要求。类型 Mandates �
 结果、不可默认构造的 query 均使 `sender_in` 不成立。实际 value 类型与条件 error channel
 取自保存的 `Q&` 对 `get_env(rcvr)` 的调用，保留 receiver environment 的值类别；
 尚不实现 dependent-sender 诊断类型。
+
+`then`、`upon_*`、`bulk*`、`into_variant`、`stopped_as_*`、`write_env`（含
+`unstoppable`）及 `schedule_from` 的 attributes 对普通查询仍是
+`FWD-ENV(get_env(child))`，值的拥有与引用的借用方式不变。completion scheduler 与
+completion domain 按 `[exec.snd.general]/3–4` 由 child 的公开回答计算，只接受带一个
+receiver environment 的查询，没有 unary 成员：
+
+- child 的回答在它实际连接的环境里求值：多数 adaptor 是 FWD-ENV，`write_env` 是 overlay
+  优先的 joined environment，`stopped_as_error` 是 receiver 原样给出的环境。
+- adaptor 在该环境中不可能产生的 tag 没有回答（`upon_stopped`、`stopped_as_*` 之后的
+  stopped，`unstoppable` 之下 run loop 的 stopped，child 的 signatures 中没有来源的 tag）。
+- 可能产生的 tag，其 domain 是所有可能交付它的 child completion 的 domain 的
+  COMMON-DOMAIN。例如 `upon_error` 的 value 取 child 的 value 与 error 两个位置，只有
+  error 的 child 则只取 error 的位置；`stopped_as_error` 的 error 取 child 的 error 与
+  stopped。某个位置没有 domain 时不回答。
+- scheduler 仅在所有这些 completion 来自同一个位置时回答：只有一个 child tag 参与，或
+  经嵌套的 adaptor 追溯到最底层 sender 的同一个 tag（`schedule(s) | then(f) |
+  upon_error(g)` 的 value 仍是 `s`）。同一 sender 的两个 tag 视为两个位置。
+- 查询不实例化用户 callback，因此 callback 或转换是否抛出不作判定。回答与此无关时照常
+  给出；有关时不回答：`then(schedule(s), f)` 的 error 只在 `f` 抛出时存在，没有回答；
+  child 自身有 error 且 domain 与 value 位置不同时，`then` 的 error 也没有回答。只有在
+  不抛出的前提下也存在的 tag 才会去查询 child。
+- 右值连接与 const 左值连接、实际环境与 signature CPO 去掉 cv/引用后的环境各自求出回答，
+  必须相同，否则不回答（两种连接经不同位置交付但 domain 相同时，domain 仍回答，
+  scheduler 不回答）。查询先问最底层 sender 对所查 tag 的回答，其次才问边表允许交付它的
+  其他 tag；都没有回答时不查看它的 signatures，有回答时按其父 adaptor 可用的连接类别
+  查看，与 `connect` 相同。domain 只向 signatures 中确实参与的 tag 查询。
+- scheduler 按 child 结果的类型公布：纯右值原样公布；引用经 const 左值做不抛出的拷贝，
+  不会从被借用的 scheduler 移动。以下情形不公布：拷贝会丢掉 volatile；公开 CPO 对公布
+  结果的再次解析可能得到另一个类型或资源（scheduler 自身的 value 查询能接受所给环境，
+  或结果是未经解析的 scheduler operand 且它有 value 查询）；child 的 CPO 在解析过程中会
+  从右值引用构造 scheduler；`write_env` 的 overlay 在连接时会按 receiver 的 allocator 重建。
+
+实现上，一串连续的此类 adaptor 作为整体对它下面第一个不属于它们的 sender（下称 origin）
+求值：直接使用 origin 的公开回答和 signatures，中间嵌套的 adaptor 按各自的 channel 表
+结构化地遍历，不经它们的公开 CPO，也不请求它们的 signatures。domain 是对 origin 中所有
+可能交付该输出的 completion 一次性取的 COMMON-DOMAIN，不是逐层嵌套取；对
+`indeterminate_domain` 这类按集合合并的结果两者相同。callback 或转换是否抛出按所有组合
+枚举：链上每个 adaptor 抛出与不抛出的每一种组合都要得到同一个回答，否则不回答。
+
+公开的 completion CPO 没有改动。adaptor 的 value domain 照常公布，`connect` 据此选择
+completion domain，late customization 与此前相同。**attributes 描述的是写出来的 sender**：
+domain 的 `transform_sender` 在连接时把某个 adaptor 换成 completion channel 不同的 sender
+之后，该 adaptor 以及它上面的 adaptor 的 attributes 仍按原 sender 回答，不跟随替换（例如
+被换成只会 stopped 的 sender 的 `then`，它和包在外面的 `schedule_from` 仍会回答 value）。
+`write_env` 的 attributes 自 D3b.3 起是 `FWD-ENV(get_env(child))`（`[exec.adapt.general]/3.2`）：
+此前直接返回 child 的 attributes 对象，非 forwarding 的查询也能穿过；现在只有 forwarding
+查询穿过，借用的引用结果仍指向原对象。`let_*`、`starts_on`、两种 `on`、`continues_on`、
+`affine` 未改动，`just*` 与 `read_env` 的 attributes 仍为空；其中已知不正确的回答见
+conformance ledger 的 D3b.3 条目。
+`into_variant` 在 variant 内原位构造 tuple，签名中没有草案里额外那次 tuple 移动带来的 error。
 
 `scheduler<Sch>` 按原表达式类别调用 `schedule`，要求 copyable、queryable、sender
 结果及 forward progress；`schedule_result_t<Sch>` 暴露相应结果类型。Progress CPO
