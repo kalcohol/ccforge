@@ -1,0 +1,31 @@
+{
+  "assessment": "Batch F round 2 qualification. Header: __result_slot::__emplace now destroys a live object before constructing and leaves the slot disengaged if construction throws; this is result storage and not an ownership or ordering step. __forward_error passes the address of a typed pointer object, so a function-reference error type is delivered without an object-pointer cast; the delivery order is unchanged and the pointer object is a stack local that outlives the receiver call. Model: TF1 now requires exactly one owner while the frame is live and validates the source of every transfer (move, connect, unwind, exchange, destroy); the raw-handle control moves from TF2 to TF1 and a handle dropped at connect is a new lost-ownership control in two scenarios. Receiver entries have distinct anchors: value and stored exception through __complete_result and __send_result, typed error through the conversion call in __complete_error and __forward_error, routed conversion failure through the call after the handler. Re-reviewed each step against task_terminal.hpp and task.hpp: __release is the single exchange, __retire_frame exchanges and destroys before each delivery, nothing follows a delivery except the routed failure reached only when the receiver was not entered, the second staging move precedes __retire_frame and the conversion follows it, __resume reads the handle before resuming. The three named mutants and six controls each fail exactly their manifest category in both tiers, and base worker scenarios require a worker step before and after the starting thread returned.",
+  "checker_digest": "1ff58258a65c35ece33a840941c25faac6065ddc37c0aa509999845c66990506",
+  "configuration_count": 40,
+  "date": "2026-11-27",
+  "expected_digest": "eabecb4ed879032dd1f8eabbafe87506f3cd24daf0db70d84225b44f665c0f3e",
+  "last_full_qualification": {
+    "assessment": "Batch F round 2 qualification. Header: __result_slot::__emplace now destroys a live object before constructing and leaves the slot disengaged if construction throws; this is result storage and not an ownership or ordering step. __forward_error passes the address of a typed pointer object, so a function-reference error type is delivered without an object-pointer cast; the delivery order is unchanged and the pointer object is a stack local that outlives the receiver call. Model: TF1 now requires exactly one owner while the frame is live and validates the source of every transfer (move, connect, unwind, exchange, destroy); the raw-handle control moves from TF2 to TF1 and a handle dropped at connect is a new lost-ownership control in two scenarios. Receiver entries have distinct anchors: value and stored exception through __complete_result and __send_result, typed error through the conversion call in __complete_error and __forward_error, routed conversion failure through the call after the handler. Re-reviewed each step against task_terminal.hpp and task.hpp: __release is the single exchange, __retire_frame exchanges and destroys before each delivery, nothing follows a delivery except the routed failure reached only when the receiver was not entered, the second staging move precedes __retire_frame and the conversion follows it, __resume reads the handle before resuming. The three named mutants and six controls each fail exactly their manifest category in both tiers, and base worker scenarios require a worker step before and after the starting thread returned.",
+    "checker_digest": "1ff58258a65c35ece33a840941c25faac6065ddc37c0aa509999845c66990506",
+    "configuration_count": 40,
+    "date": "2026-11-27",
+    "expected_digest": "eabecb4ed879032dd1f8eabbafe87506f3cd24daf0db70d84225b44f665c0f3e",
+    "outcome_summary": {
+      "fail": 15,
+      "pass": 25
+    },
+    "python": "3.13.13",
+    "source_digest": "6d75057114e82c555d3e7820dc2f18afaa1af48c777880c263c6ac10abff479c",
+    "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
+    "tier": "full"
+  },
+  "outcome_summary": {
+    "fail": 15,
+    "pass": 25
+  },
+  "python": "3.13.13",
+  "source": "backport/cpp26/execution/detail/task_terminal.hpp",
+  "source_digest": "6d75057114e82c555d3e7820dc2f18afaa1af48c777880c263c6ac10abff479c",
+  "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
+  "tier": "full"
+}

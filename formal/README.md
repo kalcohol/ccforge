@@ -30,6 +30,7 @@ python3 -B formal/stop_token/check.py --steps
 | [spawn_future](spawn_future/README.md) | eager producer、single consumer、取消、shared ownership、allocator/association 顺序与 HB | 2026-11-16：1,666 配置 |
 | [counting_scope](counting_scope/README.md) | 两种 scope 的 join、scope stop、fused callback 生命周期、HB 与 committed delivery | 2026-11-16：455 配置 |
 | [proxy_stop_adapter](proxy_stop_adapter/README.md) | SPI 的单次惰性 stop 转发、并发查询、注销与 source pin | 2026-11-26：19 配置，两个 worker |
+| [task_frame](task_frame/README.md) | `std::execution::task` 的 frame 单一所有权、connect 失败、终止前销毁 frame、receiver 自毁与返回路径 | 2026-11-27：40 配置，四个 worker |
 | [stop_token](stop_token/README.md) | inplace_stop_source 锁、回调生命周期、completion wait/notify | 2026-11-16：7,577 配置 |
 
 [source.lock](stop_token/source.lock) 同时保存最近资格运行和上次 full 的日期、配置数、结果摘要及指纹。头文件的每次编辑（包括注释和空白）都要求刷新 lock；source digest 是仅将 CRLF 转成 LF 后的头文件字节的 SHA-256，不删除注释或空白。C++ 变化不需要修改模型时可用 quick 重新确认；纯注释或纯空白改动也可用 quick，assessment 必须明确改动类型并说明模型为何不变。任何 checker 文件（包括 CLI）或 expected 数据变化都要求 full；quick 只可沿用上次 full 锁定的 checker 和 expected-data digests。Python 不变时 full 会重现相同结果，因此 C++ 单独变化的真正保障是 assessment 中的对应关系审查，tier 本身不能证明 fidelity。

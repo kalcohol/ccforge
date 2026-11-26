@@ -320,6 +320,29 @@ using __signatures = std::conditional_t<__stoppable_env<Env>,
 
 } // namespace __forge_task_scheduler
 
+class task_scheduler;
+
+namespace __forge_task_scheduler {
+
+template<class Sch>
+inline constexpr bool __wraps_task_scheduler = false;
+
+template<>
+inline constexpr bool __wraps_task_scheduler<
+    __forge_affine::__unstoppable_scheduler<task_scheduler>> = true;
+
+// True for task_scheduler itself, as the draft's !same_as, and for the types
+// whose scheduler check would find the mixed comparison below. A derived
+// eraser is discarded only when the eraser-to-eraser comparison can bind it:
+// a volatile-qualified one stays a concrete operand, as in the draft. The
+// scheduler check compares the cv-unqualified type, so it does not re-enter.
+template<class Sch>
+concept __reenters_scheduler_check =
+    (std::derived_from<Sch, task_scheduler> && !std::is_volatile_v<Sch>) ||
+    __wraps_task_scheduler<Sch>;
+
+} // namespace __forge_task_scheduler
+
 class task_scheduler {
     using __backend = __forge_task_scheduler::__backend;
     struct __ts_domain : default_domain {};
@@ -357,8 +380,15 @@ public:
                __lhs.__backend_->__equals(__rhs.__backend_->__scheduler_address());
     }
 
+    // Declared as in the draft, with one guard ahead of scheduler<Sch>.
+    // Checking scheduler<X> looks up X == X. If task_scheduler is an
+    // associated class of X, that lookup finds this operator with Sch = X and
+    // asks scheduler<X> again while it is being decided, which GCC rejects.
+    // Two kinds of X occur: affine's wrapper around a task_scheduler and a
+    // class derived from task_scheduler. The guard discards both first.
+    // A volatile-qualified derived class remains a concrete right operand.
     template<class Sch>
-        requires (!std::same_as<task_scheduler, Sch>) && scheduler<Sch>
+        requires (!__forge_task_scheduler::__reenters_scheduler_check<Sch>) && scheduler<Sch>
     friend bool operator==(const task_scheduler& __lhs, const Sch& __rhs) noexcept {
         if constexpr (std::is_volatile_v<Sch>) {
             return false; // The stored concrete type is always cv-unqualified.

@@ -47,6 +47,8 @@
 //   Stop tokens      : inplace_stop_source/token/callback, never_stop_token,
 //                      stoppable_token concepts
 //   Coroutine bridge : as_awaitable, with_awaitable_senders (C++20 coroutines)
+//   Coroutine task   : task and with_error, frame ownership and terminal
+//                      delivery only (see the staging note below)
 //   Infra            : completion_signatures_of_t,
 //                      value_types_of_t, error_types_of_t, sends_stopped,
 //                      private per-adaptor signature transforms, enable_sender,
@@ -69,6 +71,9 @@
 //     See "bulk" and "bulk_chunked, bulk_unchunked" in the ledger.
 //   - task_scheduler implements ordinary scheduling only. Its domain uses
 //     the serial bulk fallback until stage 2. No task feature macro is defined.
+//   - task is staged. Frames use the global allocation functions, and the
+//     promise environment answers only get_start_scheduler: no allocator or
+//     stop token query and no forwarding yet. See "task, with_error".
 //
 // DEVIATIONS from current working draft [exec]:
 // Entries below refer to docs/roadmap/execution-conformance-ledger.md.
@@ -101,6 +106,9 @@
 //     See the wait consumer entries.
 //   - sync_wait_with_variant returns the reference implementation's flat
 //     optional as a drafting-error exception. See the [exec.sync.wait.var] entry.
+//   - co_yield with_error stages its payload with one extra move, rejects an
+//     immovable payload, and routes a conversion failure after the frame is
+//     destroyed to the exception_ptr channel or to terminate. See the F notes.
 //
 // Missing standard facilities are listed in the ledger's coverage matrix.
 
@@ -152,6 +160,7 @@
 #include "execution/bulk.hpp"
 #include "execution/when_all.hpp"
 #include "execution/awaitable.hpp"
+#include "execution/task.hpp"
 #include "execution/counting_scope.hpp"
 #include "execution/associate.hpp"
 #include "execution/spawn.hpp"

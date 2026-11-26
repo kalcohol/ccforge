@@ -1,0 +1,16 @@
+# Configuration                                  Required failing check
+omit_exchange.inline_result.owner                TF2
+omit_exchange.worker_stopped.receiver            TF2
+deliver_before_destroy.inline_result.owner       TF3
+deliver_before_destroy.child_inline_stopped.receiver TF3
+read_after_callback.inline_result.receiver       TF5
+read_after_callback.worker_stopped.owner         TF5
+read_after_callback.worker_result.owner          TF5
+copying_move.moved.none                          TF1
+raw_handle_state.failed_own_env.none             TF1
+drop_on_connect.inline_result.owner              TF1
+drop_on_connect.unstarted.none                   TF1
+touch_after_resume.inline_result.receiver        TF5
+touch_after_resume.worker_stopped.receiver       TF5
+convert_before_destroy.inline_error.owner        TF7
+stage_after_destroy.inline_error.owner           TF5

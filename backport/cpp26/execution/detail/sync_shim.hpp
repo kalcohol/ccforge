@@ -46,7 +46,6 @@
 #define FORGE_EXECUTION_SYNC_RELEASE(...) __attribute__((release_capability(__VA_ARGS__)))
 #define FORGE_EXECUTION_SYNC_GUARDED_BY(...) __attribute__((guarded_by(__VA_ARGS__)))
 #define FORGE_EXECUTION_SYNC_REQUIRES(...) __attribute__((requires_capability(__VA_ARGS__)))
-#define FORGE_EXECUTION_SYNC_NO_ANALYSIS __attribute__((no_thread_safety_analysis))
 #else
 #define FORGE_EXECUTION_SYNC_ANNOTATIONS_ACTIVE 0
 #define FORGE_EXECUTION_SYNC_CAPABILITY(name)
@@ -56,6 +55,15 @@
 #define FORGE_EXECUTION_SYNC_RELEASE(...)
 #define FORGE_EXECUTION_SYNC_GUARDED_BY(...)
 #define FORGE_EXECUTION_SYNC_REQUIRES(...)
+#endif
+
+// The shim's own lock and unlock bodies call the native mutex, which some
+// standard libraries annotate as a capability of its own. Keep those bodies
+// out of Clang's analysis in both annotation modes. The mode above controls
+// only the shim's own capability annotations.
+#if defined(__clang__)
+#define FORGE_EXECUTION_SYNC_NO_ANALYSIS __attribute__((no_thread_safety_analysis))
+#else
 #define FORGE_EXECUTION_SYNC_NO_ANALYSIS
 #endif
 
