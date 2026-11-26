@@ -55,14 +55,13 @@ auto sum = std::linalg::dot(v, v);
 - `transposed` 对 padded layouts 按草案的预期映射语义实现，偏离
   [linalg.transp.transposed](https://eel.is/c++draft/linalg.transp.transposed)
   p4.2/p4.3 直接将 source stride 作为 padding 参数的字面写法。
-  对有效源 mapping，padded stride 为正时，以交换后的 extents 和 strides 构造
-  `layout_stride::mapping`，再显式转换为结果 padded mapping，保留精确 stride。
-  此路径也适用于转换构造产生的零 padded extent、正 stride，以及完整 padded product
-  超出 `index_type`、但 `required_span_size()` 可表示的映射。
-  stride 为零时，padded extent 必为零；静态 padding 传入 `padding_value`，
-  动态 padding 传入 `1`，均重建零 stride。由此保留交换后的 extents、strides、
-  required span size 与元素映射；不要求源映射可由 `(extents, padding)` 重建。
-  静态 padding 的零 padded extent 要求 stride 为零，故不包含正 stride 情形。
+  若 padded extent 和 padding stride 都为零，结果 mapping 仅用交换后的 extents
+  构造，既不触发旧宿主的正 stride 检查，也不将静态 padding 值 `0` 作为正 padding
+  参数传入。其余情况将交换后的 mapping 转换为 `layout_stride::mapping`，再显式
+  转换为结果 padded mapping，保留交换后的 extents、精确 strides、required span size
+  与元素地址。该路径也保留转换构造引入的未使用轴上的零 stride 或收窄后的负 stride，
+  不使用要求 stride 非负的数组构造，也不要求完整 padded product 可表示。
+  原生 `layout_stride` 的转置同样通过 mapping 转换交换 extents 和 strides。
   构造器前置条件见
   [mdspan.layout.leftpad.cons](https://eel.is/c++draft/mdspan.layout.leftpad.cons) 与
   [mdspan.layout.rightpad.cons](https://eel.is/c++draft/mdspan.layout.rightpad.cons) 与

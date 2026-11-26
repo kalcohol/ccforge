@@ -1,6 +1,7 @@
 # `<mdspan>` 扩展与 `std::constant_wrapper` backport 说明
 
 当前对齐 2026-05 C++26 working draft 的 `submdspan` surface；
+按 2026-11-26 的版本政策，另将已采纳的 LWG 决议作为 C++26 缺陷报告（DR）处理；
 `constant_wrapper` 采用 P2781 operator algebra、P3978 call/subscript 语义与
 P4206 DR 后的直接 `template<auto>` 形状；伪变更运算符跟进 LWG4383/4500。
 
@@ -65,6 +66,40 @@ Forge 同时提供 `std::constant_wrapper`（`<utility>`）和 C++26 padded mdsp
   mixed-wrapper algebra 与 call/subscript constant preservation；
 - `example/padded_mdspan_layout_example.cpp`：`layout_left_padded` /
   `layout_right_padded` 的 stride 与 full-slice layout 保留。
+
+## Búzios 缺陷报告
+
+以下四项来自 Búzios Motion 3，按 C++26 DR 处理。
+[P4485R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4485r0.html) ·
+[working draft 编辑 PR](https://github.com/cplusplus/draft/pull/9434)
+
+| 决议 | Forge 处理与集成点 |
+| --- | --- |
+| [LWG 4588](https://cplusplus.github.io/LWG/issue4588) | Forge 已符合。`submdspan.hpp` 的切片验证接受静态轴上的 `E::index_type` 与 `full_extent_t`；运行时索引仍须在轴的范围内。 |
+| [LWG 4562](https://cplusplus.github.io/LWG/issue4562) | `layout_stride::mapping::is_exhaustive()` 由宿主库提供，按跨度大小是否等于 extent 乘积判断。Forge 的 `submdspan`、padded 转换及 linalg 不依赖旧的 stride 链；`layout_transpose` 仅转发底层的 observer。Padded mapping 自身的 `is_exhaustive()` 和 `is_always_exhaustive()` 规则不变。 |
+| [LWG 4603](https://cplusplus.github.io/LWG/issue4603) | 宿主 `layout_stride` 的数组构造允许空索引空间中的零 stride；mapping 转换构造也不再要求所有 stride 为正。`submdspan` 将计算出的 stride 交给宿主；padded mapping 使用 `layout_stride` 的 mapping 转换构造，保留各轴转换至目标 index type 后的值，包括未使用轴上收窄后可能出现的负值。反向转换不额外要求正 stride。Linalg 在 padded extent 和 padding stride 都为零时仅用 extents 构造转置，否则经 mapping 转换原样保留交换后的 stride。 |
+| [LWG 4606](https://cplusplus.github.io/LWG/issue4606) | 非空索引空间的构造条件先排除 singleton 轴。若仍有轴，第一个 stride 为正，每个后续 stride 大于前面各轴最大偏移之和。Forge 已符合：构造 `layout_stride` 子映射时不检查旧排列规则。 |
+
+`backport/mdspan` 先包含宿主 `<mdspan>`，不替换基础 mapping。默认验证配置下，
+libc++ 19.1.7（llvm/tsan/asan，不启用加固）与 libstdc++ 16.2（启用或禁用
+`_GLIBCXX_ASSERTIONS`）的实测结果一致：extent `(1, 4)`、stride `(100, 1)` 的 mapping
+是 exhaustive；空索引空间接受零 stride；extent `(2, 2)`、stride `(2, 3)` 的 mapping
+可构造且 unique；`layout_left` 的 `(0, 3)` 转为 `layout_stride` 后的 stride 为 `(1, 0)`。
+GCC 16 使用原生 padded layouts 和 `submdspan`，Forge 让位。
+
+libc++ 的加固模式仍检查旧的 `layout_stride` 前置条件：各加固模式都在数组构造函数和转换
+构造函数中拒绝零或负 stride，extensive 与 debug 模式还在数组构造函数中检查旧的排列规则。
+zig lane 使用 zig 0.14 自带的 libc++，默认启用 `_LIBCPP_HARDENING_MODE_DEBUG`；portable
+test 和 linalg transpose test 在这类宿主上跳过会构造此类 mapping 的用例，这些用例由不启用
+加固的 llvm lane 覆盖。即使不启用加固，libc++ 19.1.7 的 `layout_stride::is_exhaustive()` 也可能
+对空 mapping 返回 `false`，例如 extent `(3, 0)`、stride `(4, 1)`。Portable test 使用
+外轴末端对齐的空切片，得到 extent `(0, 4)`、stride `(4, 1)`，保留对尾后 handle、
+零跨度和 exhaustiveness 的检查。
+[libc++ 19.1.7 observer 源码](https://github.com/llvm/llvm-project/blob/llvmorg-19.1.7/libcxx/include/__mdspan/layout_stride.h#L303-L320)
+
+未实测 MSVC STL；其公开源码在 iterator-debug 模式下仍包含旧的构造检查，
+二维 `is_exhaustive()` 也仍按旧规则判断。Portable tests 跳过受影响的用例或断言，
+其余检查照常进行。[MSVC STL `<mdspan>` 源码](https://github.com/microsoft/STL/blob/main/stl/inc/mdspan)
 
 
 ## Padded layouts
