@@ -80,6 +80,9 @@ target_link_libraries(myapp PRIVATE forge::forge)
 target_link_libraries(myapp PRIVATE forge::std)
 ```
 
+标准 backport 与 Forge 扩展是独立的两层。`forge::std` 只提供标准头层。
+Forge 扩展的维护政策见[组件维护状态表](docs/forge-utilities.md#组件维护状态)。
+
 源码树直接引用：
 
 ```cmake

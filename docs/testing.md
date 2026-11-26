@@ -79,6 +79,66 @@ scripts/verify-selfhosted-floor.sh
 FORGE_VERIFY_FLOOR_SKIP_STYLE_AUDIT=1 scripts/verify-selfhosted-floor.sh
 ```
 
+### 标准层与 Forge 扩展的分层 gate
+
+`scripts/audit-source-style.sh` 同时调用 `scripts/check-layering.py`。gate 检查
+Git 已跟踪以及未忽略的新文件。`include/forge/`、`test/forge/`、
+`test/unique_resource/`、`test/source_consumer/`、`test/install_consumer/`
+以及 `example/` 下文件名以 `forge_` 开头的文件归 Forge，其余归标准层。
+
+1. 标准 C++ 源文件及头文件不得包含 `<forge/...>` 或 `"forge/..."`，也不能用
+   相对路径访问同一扩展目录。gate 按字面归一化 header 路径，处理 C++23 续行并报告
+   物理行号，只在字符串之外识别 `__has_include`。
+   三个 header 不可见性检查按文件和头文件精确放行，且只允许原有的
+   `__has_include` 加 `#error` guard。`test/install_consumer` 内的标准版 TU
+   也受这条规则约束。
+2. `include/forge/` 只使用公开标准接口。gate 拒绝 `std::…::__`、指向 `std`
+   的 namespace alias，以及含 `__forge_` 的标识符。
+3. 标准测试和示例的 CMake 不得使用 `FORGE_INCLUDE_DIR`，只有
+   `test/TestOwner.cmake` 及两个设置真实配置输入的 fixture 例外：
+   `test/probe_fingerprint/test_configuration_inputs.cmake` 和
+   `test/submdspan/gate_fixture/CMakeLists.txt`。生产配置不受此规则约束，
+   配置指纹仍以 `FORGE_INCLUDE_DIR` 为键。
+4. `backport/` 和 `include/forge/` 不得把 gate 的 MSVC SAL 禁用名称当作标识符，
+   例如 `__nothrow`、`__in`、`__out` 和 `__allocator`。此规则按完整标识符匹配。
+5. 标准测试和示例的 CMake 探针通过 owner-aware helper 执行。
+   `check_cxx_source_compiles` 和 `check_cxx_source_runs` 只允许在
+   `test/TestOwner.cmake` 的指定函数中调用，字面的 `cmake_language(CALL ...)`
+   也受此规则约束。未过滤的编译后端仅限共享 helper 的指定调用方。
+   文件探针 `_forge_detect_cxx_source_compiles` 仅允许由
+   `test/CMakeLists.txt` 中先准备探针输入的 `forge_detect_cxx_source_compiles`
+   和 `forge_expect_cxx_source_compiles` 调用。
+
+每次 source audit 都先在仓库之外的临时目录运行自测。自测植入违规源码，确认五条
+规则均会拒绝对应样例，并验证放行项。单独运行可用
+`python3 -I scripts/check-layering.py --self-test`。自测不注册额外的 CTest。
+
+**词法 gate 的已知限制。** gate 不是 C++ 或 CMake 解析器，可能漏检未加引号的
+CMake 参数中的转义 `\#`、`cmake_language(DEFER CALL ...)`、`#include` 指令内的
+块注释、模板参数中的移位运算符，以及不区分大小写的文件系统上 `forge/` 的大小写变体。
+大小写不匹配的 include 在区分大小写的 Linux lanes 上无法解析。标准层隔离以 staged
+standard-only 构建为准，常规构建则验证各自的配置。
+
+### Standard-only qualification（仅标准层验证）
+
+维护者在普通容器 lanes 之外串行执行以下命令（先准备 `3rdparty/googletest`）。
+
+```bash
+scripts/verify-standard-only.sh llvm
+```
+
+该脚本以当前工作树为源，复制已跟踪和未忽略的新文件及已检出的 GoogleTest，
+但对应副本中没有 `include/forge/`。脚本使用 LLVM/libc++ 的 C++26 lane，在
+`FORGE_ENABLE_EXTENSIONS=OFF` 下构建并运行该模式注册的标准测试和示例。
+也可用 `zig` 运行 C++23 lane。日志保存在 `build/review` 的单独运行目录。
+
+A6 的已知限制来自 STD owner 的 include-root filter 使用的
+`get_filename_component(REALPATH)`：先经符号链接再用 `..` 返回时，归一化结果
+可能与实际访问的路径不同，因而漏滤扩展根目录。`file(REAL_PATH)` 是另一条命令，
+从 CMake 3.28 起在 [CMP0152](https://cmake.org/cmake/help/v3.28/policy/CMP0152.html)
+为 `NEW` 时先解析符号链接，再消解 `..`。gate 不尝试解析这些路径；上面的验证在
+物理缺失扩展头的副本中运行，是这一边界的权威检验。
+
 ## Docs/example audit（文档与示例审计）
 
 `scripts/audit-docs-and-examples.sh` 是轻量防回归脚本。它检查：

@@ -82,6 +82,10 @@ stand-aside behavior:
 target_link_libraries(myapp PRIVATE forge::std)
 ```
 
+The standard backports and Forge extensions are separate layers. `forge::std`
+exposes only the standard-header layer. The Forge extensions have their own
+[component maintenance tiers](docs/forge-utilities.md#组件维护状态).
+
 Source tree:
 
 ```cmake

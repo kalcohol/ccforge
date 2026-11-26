@@ -82,6 +82,10 @@ target は `forge::std` にリンクできます。
 target_link_libraries(myapp PRIVATE forge::std)
 ```
 
+標準 backport と Forge 拡張は別のレイヤーです。`forge::std` は標準ヘッダーの
+レイヤーだけを提供します。Forge 拡張については
+[コンポーネントのメンテナンス区分](docs/forge-utilities.md#组件维护状态)を参照してください。
+
 ソースツリーを直接使う場合:
 
 ```cmake

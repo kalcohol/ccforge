@@ -7,6 +7,18 @@
 头文件命名也按这两层区分：标准 backport 模仿标准库入口，使用 `<execution>`、
 `<utility>` 这类无扩展名头；非标准 `forge::` 扩展保持 `<forge/*.hpp>` 形式。
 
+## 组件维护状态
+
+所有 Forge 扩展仍属实验性质。维护中的组件接受缺陷、可移植性和兼容性修复；冻结组件
+保留现有 API、测试和平台覆盖，仅做维持现有契约与覆盖所需的修复，不增加功能或扩大接口。
+共享实现与聚合头随所服务的组件执行同样的维护政策。
+
+| 状态 | 组件 |
+| --- | --- |
+| **Experimental · maintained** | `split`；类型擦除（`any_sender`、`erased_sender`、`any_receiver`、`any_scheduler`、`any_stop_token`）；`unique_resource`；`static_thread_pool`；`strand`；消息通道（`channel.hpp`，含 `bounded_channel`） |
+| **Experimental · frozen pending decision** | `task`、`system_context`、`async_scope`、`start_detached`；整个 IO 层（含协程适配、流、IO 类型擦除和 OS 后端） |
+| **Experimental · frozen pending explicit promotion** | `single_thread_context`、`timer_context`、`runtime_context`、`resource_context`、`resource_policy`、`wait_result`、SIMD 别名（`simd_abi`、`simd_native_abi`）、`empty_env`、`sync_wait`、`transfer_just`、`bulk*` |
+
 运行时对象的 `close()` / `request_stop()` / `shutdown()` / `wait()` 语义见
 [forge runtime lifecycle contract](forge-runtime.md)。新增 `forge::` 运行时设施应先
 对齐这份契约，再扩展具体行为。
