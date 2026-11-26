@@ -103,6 +103,43 @@ set(CMAKE_REQUIRED_DEFINITIONS "${_forge_task_scheduler_defs}")
 unset(_forge_task_scheduler_defs)
 unset(_case)
 
+# Each task rejection is paired with the accepted sibling coroutine.
+set(_forge_task_probe_defs "${CMAKE_REQUIRED_DEFINITIONS}")
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_TASK_CONTROL
+    test_execution_task_rejections.cpp ON "The accepted task coroutines must compile" OWNER STD)
+foreach(_case IN ITEMS TEMPORARY_REFERENCE NO_ERROR_TARGET AMBIGUOUS_ERROR_TARGET IMMOVABLE_ERROR CV_VOID)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_task_probe_defs} -DFORGE_TASK_REJECT_${_case}=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_TASK_REJECT_${_case}
+        test_execution_task_rejections.cpp OFF "task must reject ${_case}" OWNER STD)
+endforeach()
+# Record how this toolchain implements the optional<U&>::emplace constraint of
+# a reference result: 1 library trait, 2 compiler builtin, 0 the stricter
+# approximation. The first two are exact.
+set(FORGE_EXECUTION_TASK_REFERENCE_BRANCH "")
+foreach(_case IN ITEMS 1 2 0)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_task_probe_defs} -DFORGE_TASK_REFERENCE_BRANCH=${_case})
+    forge_detect_cxx_source_compiles(FORGE_EXECUTION_TASK_REFERENCE_BRANCH_${_case}
+        "${FORGE_EXECUTION_TEST_ROOT}/compile/test_execution_task_reference_branch.cpp" OWNER STD)
+    if(FORGE_EXECUTION_TASK_REFERENCE_BRANCH_${_case})
+        set(FORGE_EXECUTION_TASK_REFERENCE_BRANCH "${_case}")
+        break()
+    endif()
+endforeach()
+if(FORGE_EXECUTION_TASK_REFERENCE_BRANCH STREQUAL "1")
+    message(STATUS "Forge: task reference results use std::reference_constructs_from_temporary (exact)")
+elseif(FORGE_EXECUTION_TASK_REFERENCE_BRANCH STREQUAL "2")
+    message(STATUS "Forge: task reference results use the compiler builtin (exact)")
+elseif(FORGE_EXECUTION_TASK_REFERENCE_BRANCH STREQUAL "0")
+    # Every supported toolchain has an exact branch. The approximation exists
+    # for an unsupported one and must not pass qualification silently.
+    message(FATAL_ERROR "task reference results must use an exact constraint on a supported toolchain")
+else()
+    message(FATAL_ERROR "The task reference-binding branch probe compiled for no branch")
+endif()
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_task_probe_defs}")
+unset(_forge_task_probe_defs)
+unset(_case)
+
 if(MSVC)
     foreach(_target IN ITEMS test_execution_query_conformance test_execution_query_conformance_runtime
             test_execution_env_queries test_execution_scheduler_env_queries test_execution_member_dispatch)
@@ -390,6 +427,14 @@ forge_add_execution_runtime_test(
     test_execution_task_scheduler
     test_execution_task_scheduler.cpp
     execution_task_scheduler OWNER STD)
+
+forge_add_execution_runtime_test(
+    test_execution_task_frame
+    test_execution_task_frame.cpp
+    execution_task_frame OWNER STD)
+if(MSVC)
+    target_compile_options(test_execution_task_frame PRIVATE /bigobj)
+endif()
 
 function(forge_detect_execution_task_scheduler_policy)
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
