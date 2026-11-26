@@ -60,6 +60,36 @@ if(NOT MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "^(Clang|AppleClang|Zig)$")
     target_compile_options(test_execution_sync_shim_no_annotations PRIVATE -Werror=thread-safety)
 endif()
 
+# The P Mandate is a hard error on use, with a valid instantiation as control.
+set(_forge_proxy_probe_defs "${CMAKE_REQUIRED_DEFINITIONS}")
+foreach(_case RANGE 1 3)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_proxy_probe_defs}
+        -DFORGE_PROXY_QUERY_CASE=${_case} -DFORGE_PROXY_QUERY_VALID=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_PROXY_QUERY_CONTROL_${_case}
+        test_execution_proxy_query_mandate.cpp ON "In-place stop token query must compile" OWNER STD)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_proxy_probe_defs} -DFORGE_PROXY_QUERY_CASE=${_case})
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_PROXY_QUERY_REJECT_${_case}
+        test_execution_proxy_query_mandate.cpp OFF "try_query must reject an invalid P" OWNER STD)
+endforeach()
+# Runtime nonrequestability does not excuse an incompatible callback type.
+set(CMAKE_REQUIRED_DEFINITIONS ${_forge_proxy_probe_defs} -DFORGE_PROXY_QUERY_VALID=1)
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_PROXY_CALLBACK_CONTROL
+    test_execution_proxy_callback_compatibility.cpp ON "A compatible proxy stop callback must compile" OWNER STD)
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_proxy_probe_defs}")
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_PROXY_CALLBACK_REJECT
+    test_execution_proxy_callback_compatibility.cpp OFF "A proxy must reject an incompatible stop callback" OWNER STD)
+# Isolate the const-lvalue form while both mutable token forms remain available.
+set(CMAKE_REQUIRED_DEFINITIONS ${_forge_proxy_probe_defs}
+    -DFORGE_PROXY_CALLBACK_CONST_LVALUE=1 -DFORGE_PROXY_QUERY_VALID=1)
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_PROXY_CALLBACK_CONST_LVALUE_CONTROL
+    test_execution_proxy_callback_compatibility.cpp ON "A proxy stop callback accepting const Token& must compile" OWNER STD)
+set(CMAKE_REQUIRED_DEFINITIONS ${_forge_proxy_probe_defs} -DFORGE_PROXY_CALLBACK_CONST_LVALUE=1)
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_PROXY_CALLBACK_CONST_LVALUE_REJECT
+    test_execution_proxy_callback_compatibility.cpp OFF "A proxy must reject a stop callback missing const Token&" OWNER STD)
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_proxy_probe_defs}")
+unset(_forge_proxy_probe_defs)
+unset(_case)
+
 if(MSVC)
     foreach(_target IN ITEMS test_execution_query_conformance test_execution_query_conformance_runtime
             test_execution_env_queries test_execution_scheduler_env_queries test_execution_member_dispatch)
@@ -339,6 +369,10 @@ forge_add_execution_runtime_test(
     test_execution_adversarial_schedulers
     test_execution_adversarial_schedulers.cpp
     execution_adversarial_schedulers OWNER STD)
+forge_add_execution_runtime_test(
+    test_execution_parallel_scheduler_replacement
+    test_execution_parallel_scheduler_replacement.cpp
+    execution_parallel_scheduler_replacement OWNER STD)
 forge_add_execution_runtime_test(test_execution_stop_token test_execution_stop_token.cpp execution_stop_token)
 forge_add_execution_runtime_test(test_stop_intrusive
     test_execution_stop_intrusive.cpp execution_stop_intrusive)
