@@ -90,6 +90,19 @@ set(CMAKE_REQUIRED_DEFINITIONS "${_forge_proxy_probe_defs}")
 unset(_forge_proxy_probe_defs)
 unset(_case)
 
+# The constructor body diagnoses both ways of violating infallibility in env<>.
+set(_forge_task_scheduler_defs "${CMAKE_REQUIRED_DEFINITIONS}")
+forge_expect_execution_cxx_source_compiles(FORGE_TASK_SCHEDULER_INFALLIBLE_CONTROL
+    test_execution_task_scheduler_mandate.cpp ON "An infallible task scheduler must erase" OWNER STD)
+foreach(_case IN ITEMS ERROR STOPPED)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_task_scheduler_defs} -DFORGE_TASK_SCHEDULER_${_case}=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_TASK_SCHEDULER_REJECT_${_case}
+        test_execution_task_scheduler_mandate.cpp OFF "Task scheduler erasure must reject ${_case} in env<>" OWNER STD)
+endforeach()
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_task_scheduler_defs}")
+unset(_forge_task_scheduler_defs)
+unset(_case)
+
 if(MSVC)
     foreach(_target IN ITEMS test_execution_query_conformance test_execution_query_conformance_runtime
             test_execution_env_queries test_execution_scheduler_env_queries test_execution_member_dispatch)
@@ -373,6 +386,24 @@ forge_add_execution_runtime_test(
     test_execution_parallel_scheduler_replacement
     test_execution_parallel_scheduler_replacement.cpp
     execution_parallel_scheduler_replacement OWNER STD)
+forge_add_execution_runtime_test(
+    test_execution_task_scheduler
+    test_execution_task_scheduler.cpp
+    execution_task_scheduler OWNER STD)
+
+function(forge_detect_execution_task_scheduler_policy)
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+    forge_detect_cxx_source_compiles(FORGE_TEST_TASK_SCHEDULER_NATIVE_POLICY
+        "${FORGE_EXECUTION_TEST_ROOT}/compile/test_execution_task_scheduler_policy.cpp" OWNER STD)
+    set(FORGE_TEST_TASK_SCHEDULER_NATIVE_POLICY "${FORGE_TEST_TASK_SCHEDULER_NATIVE_POLICY}" PARENT_SCOPE)
+endfunction()
+forge_detect_execution_task_scheduler_policy()
+if(FORGE_TEST_TASK_SCHEDULER_NATIVE_POLICY)
+    forge_add_execution_runtime_test(
+        test_execution_task_scheduler_bulk
+        test_execution_task_scheduler_bulk.cpp
+        execution_task_scheduler_bulk OWNER STD)
+endif()
 forge_add_execution_runtime_test(test_execution_stop_token test_execution_stop_token.cpp execution_stop_token)
 forge_add_execution_runtime_test(test_stop_intrusive
     test_execution_stop_intrusive.cpp execution_stop_intrusive)
