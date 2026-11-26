@@ -75,7 +75,7 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 | `spawn_future` | Implemented subset | Eager single-consumer future；operation 是 state 的普通成员，producer 使用 `write_env(stop-when(sndr, ssource token), env)`，stop-when 仅转发 `FWD-ENV` queries 并覆盖 stop token。allocator 优先取显式 env，其次取 wrapped sender attributes 并注入 env，否则为 `std::allocator<void>`；生命周期 resource、state、state control block、consumer 的合并 record/control block 均使用该 allocator；consumer 完成时解除外层 operation 的存储所有权。resource 持有 association，最后一个内部 allocator 副本消失时先销毁并 deallocate resource，再 disassociate，因此全部 state、consumer 和 control block 的回收均先于 join 完成。在 sender、scheduler、receiver、allocator、environment queries、decayed 结果构造及自定义 stop-token callbacks 均不自行分配时，inplace callback registration 不分配，也无额外的全局分配；上述用户代码的分配另计。value/error 按 decayed types 缓存并以 rvalue 交付，consumer stop 保留具体 token 行为；try-cancel 后 producer 未结束时仍保留 state 和 association。 可 eager 消费兼容 awaitable，producer child frame 的全局分配另计。 |
 | `inplace_stop_source/token/callback` | Implemented current-WD semantics | intrusive registration 零分配；constructor 为条件 `noexcept`，仅 callback 初始化可抛出。支持立即调用、自毁、pending sibling 注销和跨线程 invocation 等待；source owner 须覆盖注册与 stop 调用。source lock 保护 intrusive list；requester stack 上的 invocation 状态处理同线程自毁并登记跨线程等待，per-node completion 与锁交接保护跨线程回收；没有等待者时不发出 notify。协议见 [stop callback 设计](inplace-stop-callback-design.md)。 |
 | `simple_counting_scope`, `counting_scope` | Implemented current-WD-shaped subset | `join()` 的 schedule operation 为 typed 普通成员。counting token wrap 的 operation 只持有 receiver 和 child operation；按 `[exec.stop.when]` 暴露的融合 token 只保存两个输入 token，stop queries 返回逻辑或，仅 `FWD-ENV` queries 可穿过 wrapper。每个 child `callback_type<Fn>` 直接使用两个输入各自的 `stop_callback_for_t`，atomic exchange 保证并发停止时也至多调用一次；发布 registration 前先查询逻辑 token，任一输入已停止时在构造线程立即调用，后续停止由底层 registration 捕获。两个 registration 先于 `Fn` 析构，trampoline 调用 `Fn` 后不访问已可能销毁的 storage，child 管理 callback lifetime 和注册失败；wrapper 原样转发 completion，不合成 stopped 或额外 signature。一个 child callback 对应两个输入 registration；inplace 输入的 registration 均零分配，无其他融合状态分配。输入 source owner 须覆盖全部 stop 调用；completion 前注销 receiver registration，source lifetime 边界详见设计记录。sender、scheduler、receiver、environment queries、decayed 结果构造及自定义 stop-token callbacks 自行分配的内存另计。destructor、join 和 disassociation 顺序保持。 token.wrap 接受 awaitable，停止融合与 association 协议不变；child connect 的全局 frame allocation 另计。 |
-| `as_awaitable`, `with_awaitable_senders` | Implemented current-WD-shaped subset | `as_awaitable` 按 direct member、transformed/adapted member、普通 awaiter、transformed/adapted sender bridge、identity fallback 的顺序分派；普通 awaiter 覆盖直接 awaiter、member/free `operator co_await`，completion adaptor 缺失时按 identity 处理。Sender bridge 对零值、单值和单一多参数 value completion 分别返回 `void`、该值类型和 `tuple<...>`；按原 sender 表达式类别检查 value signatures，多个 signatures 即使 decay 后相同也不合并。有多个 alternatives 的 sender 不进入 transformed member 或 sender bridge 分支。`with_awaitable_senders` 提供 current-WD-shaped continuation / stopped 传播。 direct member 结果有 awaitable Mandate，7.2 noexcept 按实际表达式；prepared sender 在 receiver 实际环境要求 receiver-of，无 unhandled_stopped 的 promise 不可接收 stopped。Mixin 有 class-type 约束，handler 按表达式存在性检测。receiver 直接暴露 promise env 属 WD latitude。保留 deferred connect、symmetric transfer 与 prepared 多值 identity fallback。Bridge 的 CTAD 要求 prepared sender 是右值，普通 awaiter 分支共用 GET-AWAITER emulation。 |
+| `as_awaitable`, `with_awaitable_senders` | Implemented current-WD-shaped subset | `as_awaitable` 按 direct member、transformed/adapted member、普通 awaiter、transformed/adapted sender bridge、identity fallback 的顺序分派；普通 awaiter 覆盖直接 awaiter、member/free `operator co_await`，completion adaptor 缺失时按 identity 处理。Sender bridge 对零值、单值和单一多参数 value completion 分别返回 `void`、该值类型和 `tuple<...>`；按原 sender 表达式类别检查 value signatures，多个 signatures 即使 decay 后相同也不合并。有多个 alternatives 的 sender 不进入 transformed member 或 sender bridge 分支。`with_awaitable_senders` 提供 current-WD-shaped continuation / stopped 传播。 direct member 结果有 awaitable Mandate，7.2 noexcept 按实际表达式；prepared sender 在 receiver 实际环境要求 receiver-of，无 unhandled_stopped 的 promise 不可接收 stopped。Mixin 有 class-type 约束，handler 按表达式存在性检测。receiver 直接暴露 promise env 属 WD latitude。保留 deferred connect、symmetric transfer 与 prepared 多值 identity fallback。LWG 4547 的 deduction guide 保留 prepared sender 的 cv/ref，符合条件的左值按引用保存和连接；普通 awaiter 分支共用 GET-AWAITER emulation。 |
 | Ordinary awaitable as sender | Implemented current-WD-shaped subset | marker-first private enable-sender concept 保留 user specialization；domain transform / member signatures 后按 await-result 合成 value、exception_ptr 与 stopped signatures（无环境时无 await_transform）。connect 的 direct / transformed / noexcept 路径均支持 awaitable fallback，frame 全局分配，operation noexcept move 转移 handle 并清空源；完成在挂起 frame 的 await_suspend 内交付并允许 receiver 自毁。GET-AWAITER 为受约束的 member / ADL emulation，竞争候选保守拒绝；不是编译器内建 await-expression 反射。内部 completion awaiter 为局部类，排除 user receiver/value ADL。若类型兼具有效 awaiter 方法与 deleted/inaccessible/ambiguous 的 co_await operator，probe 将 operator 视作缺失，类型可满足 sender，但实际 await/connect 为 ill-formed（已接受 emulation 边界）。 |
 | `schedule_from` | Implemented current-WD-shaped subset | 单参数 CPO 构造 departure marker，product access 暴露 schedule_from_t；attributes、child receiver 与 signatures 采用 FWD-ENV，保留引用身份与值所有权，const-lvalue 直接连接同类别 child；无独立结果缓冲。continues_on 经该 marker 允许 source domain 定制 departure；generic child operation immovability 仍依赖 child connect 契约。 |
 | `transform_sender`, `apply_sender` | Implemented current-WD-shaped subset | 公开入口为受约束函数模板，支持显式模板实参与 ADL；default_domain 标准成员限制 sender / queryable，默认左值结果保留引用；`connect` 对原始 source 类别应用相同的 `sender` 约束。transform 仍依次递归应用 completion / start domain；apply 采用 explicit-domain-first、algorithm-tag fallback。两个阶段均只识别带 tag 的 domain transform；缺失时调用默认变换。 |
@@ -390,23 +390,38 @@ P0-7 移除了上文快照中 Forge bulk 对私有 backport adaptor 的依赖。
 - C1 对照 live WD（2026-11-19）。`[exec.connect]/6.8` 和 `[exec.snd.concepts]` 要求原
   source 类别满足 `sender`。自定义成员能借用的 immovable source 或不可复制的左值已移除。
   `[exec.as.awaitable]/7.2, /7.4` 和 `[execution.syn]/2` 按签名计数，移除了 decay 后去重。
-  /7.4 的 class-template `Sndr&&` 不能从左值 CTAD，已移除隐式 lvalue decay-copy。
+  C1 移除了桥接时隐式复制左值的路径。
   /7.3 共用不含 promise `await_transform` 的 GET-AWAITER，已移除 member-first 路径。
 - Búzios Motion 3（[P4485R0](https://wg21.link/P4485R0)）将
   [LWG 4357](https://cplusplus.github.io/LWG/issue4357) 和
   [LWG 4547](https://cplusplus.github.io/LWG/issue4547) 纳入 C++29 working draft，
-  不属于 C++26 re-DIS。4357 已符合：
-  [`detail/connect_awaitable.hpp`](../../backport/cpp26/execution/detail/connect_awaitable.hpp)
-  用 `is_void_v` 为 cv-qualified void 结果选择零参数 completion。
-  4547 增加保留 cv/ref 的 deduction guide，解决 C1 记录的 `[exec.as.awaitable]/7.4`
-  CTAD 措辞问题。D3a 不实施 4547，保留当前右值限制；是否跟进纳入 C++29 的 LWG
-  决议由负责人在计划中的批次 D4 决定。
+  不属于 C++26 re-DIS。按 2026-11-26 负责人的版本策略，以 C++26 为基线，
+  将已纳入 working draft 的 LWG 决议作为缺陷报告应用。4357 已符合：
+  源码检查确认 [`detail/connect_awaitable.hpp`](../../backport/cpp26/execution/detail/connect_awaitable.hpp)
+  使用 `is_void_v`。D4 测试覆盖声明为 cv-qualified `void` 的 `await_resume` 触发零参数
+  completion 的行为。调用表达式的类型是 `void`，此测试不能区分旧的 `same_as` 写法。
+  D4 作为 DR 实施 4547：/2 的 deduction guide 保留 cv/ref，解决 C1 记录的
+  `[exec.as.awaitable]/7.4` CTAD 措辞问题。Prepared 左值按引用保存，以实际类别
+  计算签名并连接，不复制或移动所借用的 sender。桥接在 `as_awaitable` 中按顺序求值并保留
+  promise environment、变换结果、变换后 sender 的 environment 和 completion adaptor 中的
+  prvalue（identity 适配直接把变换结果保存为 prepared sender）；引用中间结果不复制。
+  无论 prepared sender 按引用还是按值返回，均先销毁 operation，再销毁所保存的 prepared
+  sender，最后逆序销毁中间对象，模拟 WD 的完整表达式生命周期。中间类型不影响 awaitable 的
+  ADL。若借用外部对象，调用方仍负责使其活到 awaitable 及其 operation 销毁为止。
+- D4 已接受的实现偏差：与仅供说明的 `sender-awaitable<Sndr, Promise>` 不同，bridge 类型
+  还取决于保留存储的大小和对齐，以保持内联存储而不分配堆内存。即使 prepared sender 和
+  promise 类型相同，存储布局不同的两条准备链也会产生不同的 bridge 类型，不能在同一个
+  推导返回类型的函数中分别返回这两个 bridge；只接受某个具体 bridge 类型的
+  `operator co_await` 重载也可能只对其中一条准备链被选中。bridge 自身的连接、完成和销毁
+  路径不依赖存储布局。
 - Receiver environment 只规定 forwarding queries 的答案，直接暴露 promise env 在此范围内。
   保留在 `await_suspend` 内连接 sender，以同线程 deferral 和 symmetric transfer 避免同步
   完成重入。若变换或适配后的 sender 按其表达式类别声明多个 value signatures，
   即使原 sender 符合 /7.4 的单签名条件，仍回退到原表达式。
-  其余情形按原表达式的 /7.4 条件选择；若 completion adaptor 返回具有单一 value
-  signature 的 move-only sender 左值引用，bridge 构造因 CTAD 无法绑定该左值而不成立。
+  其余情形按原表达式的 /7.4 条件选择。若选中的 prepared sender 不可连接，CPO 按实际
+  类别通过 connectability 约束拒绝，不回退到原表达式。这也有意改进了不可连接右值的
+  诊断：此前桥接实例化产生硬错误，现在依赖的 `requires` 检查返回 `false`，直接调用仍
+  ill-formed。Mixin 按草案使用依赖返回类型，不添加参与重载排序的关联约束。
 - GET-AWAITER 模拟将同时可调用的 member 与 ADL `operator co_await` 按歧义处理，
   即使语言的 overload resolution 能选出一个最佳候选。`as_awaitable` 因而跳过普通 awaiter
   分支，类型若满足 sender bridge 的条件则进入该 bridge。

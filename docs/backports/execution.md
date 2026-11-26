@@ -275,12 +275,15 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   用同线程 deferral 与 symmetric transfer 保持 stack safety。
   Transformed/adapted member 与 sender bridge 都按原 sender 表达式类别检查 value
   signatures。即使参数经 decay 后得到同一类型，两种 value signatures 仍是两个 alternatives。
-  无 value 或唯一零参数 value 返回 `void`，唯一单参数 value 返回 decayed 类型，
-  唯一多参数 value 返回 decayed `tuple<...>`。普通 awaiter 与直接定制仍可处理左值，
-  sender bridge 根据原表达式选择，并要求变换和适配后的 sender 是右值。
-  仅在 prepared sender 按其表达式类别声明多种 value signatures 时回退到原表达式。
-  Completion adaptor 返回单一 value signature 的 move-only sender 左值引用时，
-  仍选择 sender bridge，构造因 CTAD 无法绑定该左值而不成立。
+  sender bridge 根据原表达式选择，并按变换和适配后的 sender 的实际值类别
+  计算结果类型：无 value 或唯一零参数 value 返回 `void`，唯一单参数 value 返回
+  decayed 类型，唯一多参数 value 返回 decayed `tuple<...>`。
+  LWG 4547 后，桥接借用符合条件的 prepared 左值，不复制或移动 sender，并以左值连接。
+  桥接保留准备链的临时对象，模拟 WD 完整表达式的生命周期。借用外部对象时，调用方须保证
+  它活到 awaitable 及其 operation 销毁为止，按值返回的 prepared sender 借用外部对象时也一样。
+  若 prepared sender 按其表达式类别声明多种 value signatures，则回退到原表达式；
+  若原表达式符合桥接条件而 prepared 左值不能连接（例如 move-only sender 的左值），
+  则拒绝桥接，不回退到原表达式。
 - Forge `async_scope::spawn`、`resource_context::spawn`、`start_detached`、`any_sender_of`、
   `forge::split`、`sync_wait` 与 `io::await_sender` 接受满足各自环境和 value-shape 契约的 awaitable。
   Scope / IO 入口按实际 stop-token 环境检查；`any_sender_of` 仍要求相同 wait 结果，
@@ -625,7 +628,7 @@ P3682 将 `split` 从工作草案移除；该接口现由 Forge 头文件提供�
 | `std::execution::when_all(a, b)`（child 有多种 value completion，结果为笛卡尔积） | `std::execution::when_all_with_variant(a, b)`；每个 child 的 value 以一个 variant 参数交付 |
 | `std::execution::connect(s, r)` 借用 immovable source 或不可复制的自定义左值 sender | 可移动的 source 用 `std::execution::connect(std::move(s), r)`。若 source 不能移动，用保存其指针或引用的可移动 sender 连接，并让被借用对象活到 operation 结束 |
 | `co_await std::move(s)`，依赖 `set_value_t(int)`、`set_value_t(int&)` 在 decay 后合并 | `co_await std::execution::into_variant(std::move(s))`，按 variant 结果消费。若两种完成本来就应交付同一类型，可令 sender 只声明并交付一种 value signature |
-| `co_await s`，依赖 sender bridge 隐式复制左值 | 可消费时用 `co_await std::move(s)`。需保留原对象时，先写 `auto copy = s` 再用 `co_await std::move(copy)`。若 completion adaptor 返回左值，将其改为返回可连接的右值 |
+| `co_await s`，依赖 sender bridge 隐式复制左值 | LWG 4547 后可直接等待符合条件的左值，sender bridge 借用该对象并以左值连接。自定义左值 `connect` 可以观察并修改原对象。若要与这些修改隔离，先显式复制再等待副本：`auto copy = s; co_await std::move(copy);`。不可复制但可移动的 sender 仍须用 `co_await std::move(s)` 消费 |
 | `as_awaitable(s, p)` 依赖可同时调用的 member 与 ADL `operator co_await` 优先选中 member 分支 | 为该值类别只提供一个可调用的 `operator co_await`，或明确调用所需的成员，例如 `co_await std::move(s).operator co_await()` |
 | `std::execution::split(s)` | 包含 `<forge/split.hpp>` 后调用 `forge::split(s)` |
 | 两种 counting scope 的 `scope.count()` / `scope.is_closed()`，以及已移除的 `forge::scope_count(scope)` / `forge::scope_is_closed(scope)` | 协调工作时用 `scope.close()` 拒绝新的关联，再用 `std::this_thread::sync_wait(scope.join())` 等待已有关联释放。若应用需要快照，由调用方维护计数和关闭状态，并在并发访问时自行同步。 |
@@ -719,7 +722,20 @@ Backport 采用参考实现 stdexec 的扁平类型 `optional<V>`，符合 /4.2.
 `coroutine_handle` 需要 promise 类型；实现使用无引用的 Promise。
 `[exec.as.awaitable]/1` 的 `awaitable-sender` 要求 `unhandled_stopped`，/7.4 却不再使用
 该 concept；停止的 ill-formedness 因此由 connect 的 receiver-of Mandate 决定。
-/7.4 的 class-template `Sndr&&` 在 CTAD 中不是 forwarding reference。
-适配后的左值无法构造 sender bridge，显式移入或先复制再移入可保留对应的意图。
+[LWG 4547](https://cplusplus.github.io/LWG/issue4547) 在 /2 增加 deduction guide，
+使 /7.4 按适配后表达式的 cv/ref 类别推导 `Sndr`；符合条件的左值按引用保存和连接。
+由于 backport 的 `as_awaitable` 是函数，sender bridge 在构造时依次求值并保留准备链中的
+prvalue：promise environment、变换结果、变换后 sender 的 environment、completion adaptor。
+引用中间结果不复制；若不适配，变换结果直接作为 prepared sender 保存。即使 prepared sender
+按值返回，它也可能借用这些中间对象。桥先销毁 operation，再销毁其保存的 prepared sender，
+最后按构造的逆序销毁保留的中间对象，以模拟 WD 完整表达式的生命周期。存储不把这些中间类型
+引入 `operator co_await` 的 ADL。外部借用对象仍须由调用方保留到 awaitable 及其 operation 销毁。
+与 WD 仅供说明的 `sender-awaitable<Sndr, Promise>` 不同，backport 的 bridge 类型还取决于
+内联保留存储的大小和对齐。即使 prepared sender 和 promise 类型相同，若两条准备链的存储布局
+不同，在同一个推导返回类型的函数中分别返回两个 bridge 也会因类型不一致而失败。同理，
+只接受某个具体 bridge 类型的 `operator co_await` 重载可能对其中一条准备链被选中，而另一条
+仍使用 bridge 自身的 awaiter；bridge 自身的连接、完成和销毁路径不依赖存储布局。
+[LWG 4357](https://cplusplus.github.io/LWG/issue4357) 要求 `[exec.connect]/5` 用
+`is_void_v` 判断结果类型，因此 cv-qualified `void` 也触发零参数 `set_value`。
 依赖 constexpr exceptions 的 completion-signature diagnostics
 仍以 SFINAE 表达，不宣称完整 C++26 consteval API。
