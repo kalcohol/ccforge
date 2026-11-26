@@ -38,6 +38,26 @@ function(forge_expect_forge_cxx_source_compiles result_var source_name should_co
         OWNER FORGE)
 endfunction()
 
+function(forge_check_bulk_policy_objects result_var)
+    # Use the same <execution> selection as Forge tests. Test the policy
+    # capability independently so a regression in <forge/bulk.hpp> fails the
+    # explicit-shape control instead of silently disabling the tests.
+    set(CMAKE_REQUIRED_INCLUDES "")
+    _forge_prepare_test_probe(OWNER FORGE)
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+    unset(${result_var} CACHE)
+    check_cxx_source_compiles([=[
+        #include <execution>
+        #if defined(FORGE_NATIVE_EXECUTION_POLICY_OBJECTS)
+        static_assert(FORGE_NATIVE_EXECUTION_POLICY_OBJECTS);
+        #elif !defined(__cpp_lib_execution) || __cpp_lib_execution < 201603L
+        #error Native execution policy objects are unavailable
+        #endif
+        int main() {}
+    ]=] ${result_var})
+    set(${result_var} "${${result_var}}" PARENT_SCOPE)
+endfunction()
+
 function(forge_register_simd_extension_tests)
     set(_forge_simd_aliases_available TRUE)
     if(FORGE_FORCE_SIMD_BACKPORT OR (NOT FORGE_SIMD_FULL AND NOT FORGE_SIMD_PARTIAL))
@@ -83,7 +103,19 @@ if(FORGE_FORCE_SENDERS_BACKPORT
     forge_expect_forge_cxx_source_compiles(
         FORGE_EXECUTION_EXTENSIONS_BACKPORT_CONTROL
         test_forge_execution_extensions_backport.cpp ON
-        "Forge execution aliases, split and explicit bulk shapes must work with the execution backport")
+        "Forge execution aliases and split must work with the execution backport")
+endif()
+
+set(_forge_bulk_available OFF)
+if(FORGE_FORCE_SENDERS_BACKPORT OR FORGE_SENDERS_FULL OR NOT FORGE_SENDERS_PARTIAL)
+    forge_check_bulk_policy_objects(FORGE_TEST_BULK_POLICY_OBJECTS)
+    set(_forge_bulk_available "${FORGE_TEST_BULK_POLICY_OBJECTS}")
+endif()
+if(_forge_bulk_available)
+    forge_expect_forge_cxx_source_compiles(
+        FORGE_BULK_EXPLICIT_SHAPES_CONTROL
+        test_forge_bulk_explicit_shapes.cpp ON
+        "Forge bulk must accept explicit const shapes when native execution policy objects are available")
 endif()
 
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME
@@ -285,9 +317,10 @@ if(FORGE_FORCE_SENDERS_BACKPORT
     if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
         forge_add_forge_test(test_forge_execution_extensions
             test_forge_execution_extensions.cpp forge_execution_extensions)
-        # P0-7 must gate the serial bulk tests on policy availability at configure time.
-        forge_add_forge_test(test_forge_serial_bulk
-            test_forge_serial_bulk.cpp forge_serial_bulk)
+        if(_forge_bulk_available)
+            forge_add_forge_test(test_forge_serial_bulk
+                test_forge_serial_bulk.cpp forge_serial_bulk)
+        endif()
         forge_add_forge_test(test_forge_predecessor_lifetime
             test_forge_predecessor_lifetime.cpp forge_predecessor_lifetime)
         forge_add_forge_test(test_forge_split_allocations

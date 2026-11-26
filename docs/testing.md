@@ -531,7 +531,9 @@ transform 的选择回归。`execution_standard_forms_compile` 构建标准调�
 配置 MSVC 测试探针时，请勿在 `CL` 或 `_CL_` 环境变量中设置 `/WX`，因为 MSVC 会将
 `CL` 的选项加在命令行选项之前，将 `_CL_` 的选项加在命令行选项之后。
 `forge_serial_bulk` 覆盖 Forge 三种串行算法的 direct 与 pipe 调用、索引顺序、
-chunk 边界、stopped 与 error 传递，在 ASan 和 TSan lanes 均运行。
+chunk 边界、stopped 与 error 传递。该测试针对 execution backport，并在配置时检查
+原生 execution policy 对象。llvm、zig、ASan 和 TSan lanes 没有这些对象，因此不注册
+该测试。显式 `const` shape 的 Forge bulk 探针也仅在配置时确认 bulk 可用后运行。
 
 ## Example smoke tests（示例冒烟）
 

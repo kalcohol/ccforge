@@ -45,12 +45,12 @@ int main() {
     forge_example::require(std::get<0>(*second_shared) == 200);
 
     // Match the availability condition for forge::bulk in <forge/bulk.hpp>.
-#if defined(FORGE_EXECUTION_BACKPORT_ACTIVE) || \
-    (((defined(FORGE_NATIVE_SENDERS_COMPLETE) && FORGE_NATIVE_SENDERS_COMPLETE) || \
-      (!defined(FORGE_NATIVE_SENDERS_COMPLETE) && defined(__cpp_lib_senders) && __cpp_lib_senders >= 202506L)) && \
-     ((defined(FORGE_NATIVE_EXECUTION_POLICY_OBJECTS) && FORGE_NATIVE_EXECUTION_POLICY_OBJECTS) || \
-      (!defined(FORGE_NATIVE_EXECUTION_POLICY_OBJECTS) && \
-       defined(__cpp_lib_execution) && __cpp_lib_execution >= 201603L)))
+#if (defined(FORGE_EXECUTION_BACKPORT_ACTIVE) || \
+     (defined(FORGE_NATIVE_SENDERS_COMPLETE) && FORGE_NATIVE_SENDERS_COMPLETE) || \
+     (!defined(FORGE_NATIVE_SENDERS_COMPLETE) && defined(__cpp_lib_senders) && __cpp_lib_senders >= 202506L)) && \
+    ((defined(FORGE_NATIVE_EXECUTION_POLICY_OBJECTS) && FORGE_NATIVE_EXECUTION_POLICY_OBJECTS) || \
+     (!defined(FORGE_NATIVE_EXECUTION_POLICY_OBJECTS) && \
+      defined(__cpp_lib_execution) && __cpp_lib_execution >= 201603L))
     // bulk: serial iteration
     int sum = 0;
     auto bulk_work = ex::just(0) | forge::bulk(5, [&sum](int i, int&) { sum += i; });

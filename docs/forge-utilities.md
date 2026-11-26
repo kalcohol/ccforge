@@ -426,19 +426,35 @@ Backport 与完整原生实现中的 `forge::sync_wait` 都是 `std::this_thread
 `std::this_thread::sync_wait_with_variant`。
 [执行库迁移表](backports/execution.md#已移除扩展与迁移)
 
+### Execution 能力宏
+
+这些宏描述 `<execution>` 实际提供的能力，由 backport 或配置探测提供，不是用户开关。
+
+| 宏 | 来源 | 值 | Forge 读取方 |
+| --- | --- | --- | --- |
+| `FORGE_EXECUTION_BACKPORT_ACTIVE` | 注入的 execution 聚合头 | 注入时定义为 `1`，未注入时不定义 | `split.hpp`、`bulk.hpp` |
+| `FORGE_NATIVE_SENDERS_COMPLETE` | `forge.cmake` 的标准库 senders 探测 | 完整为 `1`，部分实现为 `0`，无原生实现时不定义 | `split.hpp`、`bulk.hpp` |
+| `FORGE_NATIVE_EXECUTION_POLICY_OBJECTS` | 原生 execution wrapper | 找到原生 policy 头文件且 `__cpp_lib_execution >= 201603L` 时为 `1`（标准库声明支持 policy 对象），否则为 `0`；`0` 只表示未声明支持，不排除实验性配置下已提供 `seq`。未经过 wrapper 时可能未定义 | `bulk.hpp` |
+
+`split.hpp` 优先检查 backport 是否已注入，即使完整性探测报告 `0` 也不影响注入路径。
+未注入时，`FORGE_NATIVE_SENDERS_COMPLETE` 为 `1` 才启用，值为 `0` 时不启用。
+只有未定义该宏时，才以 `__cpp_lib_senders >= 202506L` 判断原生实现是否完整。
+
+`bulk.hpp` 使用相同的 senders 判定，并另外要求原生 execution policy 对象。
+只有未定义 `FORGE_NATIVE_EXECUTION_POLICY_OBJECTS` 时，才以
+`__cpp_lib_execution >= 201603L` 判断 policy 对象是否可用。
+
 ## 串行 bulk
 
 `<forge/bulk.hpp>` 提供 `forge::bulk`、`forge::bulk_chunked` 和
-`forge::bulk_unchunked`。三者支持 `adaptor(sndr, shape, f)` 与
-`sndr | adaptor(shape, f)`。Backport 在完成线程串行执行。
+`forge::bulk_unchunked`，仅在有原生 execution policy 对象且已注入 execution backport
+或有完整原生 senders（同样要求 policy 对象）时可用。没有原生 policy 对象的配置不声明这三个入口。
+三者支持 `adaptor(sndr, shape, f)` 与 `sndr | adaptor(shape, f)`，两种形式都以
+`std::execution::seq` 调用对应的标准 adaptor。Backport 在完成线程串行执行。
 在该路径中，`bulk` 与 `bulk_unchunked` 按顺序为每个索引调用
 `f(index, values...)`，`bulk_chunked` 对正整数 shape 调用一次
 `f(0, shape, values...)`。前序的 error 与 stopped completion 继续转发，
 callback 异常以 `std::exception_ptr` 传递。
-
-完整的原生 senders 实现提供 policy 对象时，这些入口调用对应的标准算法并传入
-`std::execution::seq`。未启用 backport 且原生实现不满足上述条件时，
-头文件不声明这些入口。
 
 ## 已移除的线性代数扩展
 

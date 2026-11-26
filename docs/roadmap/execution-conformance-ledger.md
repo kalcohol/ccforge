@@ -343,6 +343,9 @@ stdexec 属于可选参考实现探测，不代表 native handoff 完成。流�
 
 2026-11-25 的 P0-1 移除了 `forge::scope_count` 与 `forge::scope_is_closed`。两种 counting scope 都使用 `close()` 与 `join()` 协调，应用若需要诊断快照则由调用方维护计数和关闭状态。内部 observer 仅用于实现与白盒测试，不属于公共 API。标准接口见 [counting scopes](https://eel.is/c++draft/exec.counting.scopes)。`sync_wait` 的恰好一种 value completion 要求见 [sync_wait](https://eel.is/c++draft/exec.sync.wait)。
 
+P0-7 移除了上文快照中 Forge bulk 对私有 backport adaptor 的依赖。`forge::bulk*`
+现以 `std::execution::seq` 调用对应的标准 adaptor，没有原生 execution policy 对象时不提供。
+
 ## Linalg 与 mdspan 的草案对齐
 
 | 范围 | 当前实现 |

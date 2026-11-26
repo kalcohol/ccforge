@@ -80,7 +80,7 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   `let_stopped`、`write_env`、`unstoppable`
 - 调度器适配器：`starts_on`、`continues_on`、`on`、`affine`、`bulk` /
   `bulk_chunked` / `bulk_unchunked`（串行 subset）
-- Forge 扩展：`forge::transfer_just` 及无策略串行 `forge::bulk*`
+- Forge 扩展：`forge::transfer_just` 及串行 `forge::bulk*`（后者需要原生 execution policy 对象）
 - 组合器：`into_variant`、`when_all`（至少一个 child sender；每个 child 至多一个 value completion signature、外层取消传播）、
   `when_all_with_variant`、`associate`、`spawn`、`spawn_future`
 - 消费者：`sync_wait`（Mandate 要求在其 run_loop 环境中恰好有一个 value completion
@@ -575,7 +575,7 @@ COMMON-DOMAIN 检查完整的 common type 默认构造表达式，不可构造�
 - [execution_affine_example.cpp](../../example/execution_affine_example.cpp)：execution affine 的接口组合与完成结果。
 
 - [execution_combinators_example.cpp](../../example/execution_combinators_example.cpp)：用标准接口 when_all 合并结果，并在计数 scope 中 spawn。
-- [forge_execution_combinators_example.cpp](../../example/forge_execution_combinators_example.cpp)：用 Forge 扩展 split 复用结果，并在 bulk 可用时演示串行迭代。
+- [forge_execution_combinators_example.cpp](../../example/forge_execution_combinators_example.cpp)：用 Forge 扩展 split 复用结果。有原生 execution policy 对象时也演示串行 bulk。
 
 - [execution_coro_example.cpp](../../example/execution_coro_example.cpp)：execution coro 的接口组合与完成结果。
 
@@ -613,6 +613,9 @@ backport 采用参考实现及草案的明确意图，在符合性台账与 DEVI
 
 P3682 将 `split` 从工作草案移除；该接口现由 Forge 头文件提供，execution backport
 已完全移除其实现。
+
+表中六个 bulk 迁移形式都需要原生 execution policy 对象。没有这些对象时，
+`<forge/bulk.hpp>` 不声明 `forge::bulk`、`forge::bulk_chunked` 或 `forge::bulk_unchunked`。
 
 | 旧用法 | 迁移后的用法 |
 | --- | --- |
@@ -676,9 +679,9 @@ P3682 将 `split` 从工作草案移除；该接口现由 Forge 头文件提供�
 backport 将随工作草案更新。`starts_on(sch, sndr)` 与 `schedule_from(sndr)`
 也按各自的 CPO 调用形式提供。[工作草案](https://eel.is/c++draft/exec.continues.on)
 
-`<forge/bulk.hpp>` 提供独立的无策略串行 Forge 算法。Backport 实现按索引顺序执行，
-`bulk_chunked` 对正数 shape 执行一个 chunk。完整原生 senders 和原生 execution
-policy 对象同时可用时，Forge 入口调用相应标准算法并传入 `std::execution::seq`。
+`<forge/bulk.hpp>` 的三个入口调用相应标准 adaptor 并传入 `std::execution::seq`。
+它们需要原生 execution policy 对象，并要求已注入 execution backport 或有完整原生
+senders。Backport 实现按索引顺序执行，`bulk_chunked` 对正数 shape 执行一个 chunk。
 `forge::transfer_just` 组合 `just` 与 `continues_on`，可用于完整原生实现。
 
 `forge::sync_wait` 与 `std::this_thread::sync_wait` 是同一个对象，原生与 backport
