@@ -582,16 +582,15 @@ FORGE_CW_LOGICAL_OPERATOR(||)
 #undef FORGE_CW_LOGICAL_OPERATOR
 
 template <auto X, class XT, auto Y, class YT>
-constexpr auto operator,(constant_wrapper<X, XT>,
-                         constant_wrapper<Y, YT>) noexcept = delete;
+auto operator,(constant_wrapper<X, XT>, constant_wrapper<Y, YT>) = delete;
 
 template <auto X, class XT, __forge_constexpr_param R>
     requires (!__forge_constant_wrapper<R>)
-constexpr auto operator,(constant_wrapper<X, XT>, R) noexcept = delete;
+auto operator,(constant_wrapper<X, XT>, R) = delete;
 
 template <__forge_constexpr_param L, auto Y, class YT>
     requires (!__forge_constant_wrapper<L>)
-constexpr auto operator,(L, constant_wrapper<Y, YT>) noexcept = delete;
+auto operator,(L, constant_wrapper<Y, YT>) = delete;
 
 template <auto X>
 constexpr auto cw = constant_wrapper<X, decltype(X)>{};
