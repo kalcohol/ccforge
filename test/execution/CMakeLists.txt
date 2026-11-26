@@ -48,6 +48,18 @@ forge_add_execution_runtime_test(test_execution_scheduler_env_queries
 forge_add_execution_compile_probe(test_execution_member_dispatch
     test_execution_member_dispatch.cpp execution_member_dispatch_compile)
 
+# Compile the private L0 shim in its default and forced-portable annotation modes.
+forge_add_execution_compile_probe(test_execution_sync_shim
+    test_execution_sync_shim.cpp execution_sync_shim_compile OWNER STD)
+forge_add_execution_compile_probe(test_execution_sync_shim_no_annotations
+    test_execution_sync_shim.cpp execution_sync_shim_no_annotations_compile OWNER STD)
+target_compile_definitions(test_execution_sync_shim_no_annotations PRIVATE
+    FORGE_EXECUTION_SYNC_SHIM_NO_ANNOTATIONS=1)
+if(NOT MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "^(Clang|AppleClang|Zig)$")
+    target_compile_options(test_execution_sync_shim PRIVATE -Werror=thread-safety)
+    target_compile_options(test_execution_sync_shim_no_annotations PRIVATE -Werror=thread-safety)
+endif()
+
 if(MSVC)
     foreach(_target IN ITEMS test_execution_query_conformance test_execution_query_conformance_runtime
             test_execution_env_queries test_execution_scheduler_env_queries test_execution_member_dispatch)
