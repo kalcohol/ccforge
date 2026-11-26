@@ -111,6 +111,11 @@ correctness issue，否则不作为下一轮默认目标。符合标准的原生
 
 ### Búzios 决议与批次 D3a
 
+- 批次 D6：[P4354R0](https://wg21.link/P4354R0)（Búzios LWG Motion 6）只纳入 C++29 working draft，
+  没有指定为 C++26 的缺陷报告。按负责人 2026-11-26 的版本方针（以 C++26 为基线，已采纳的
+  LWG 决议作为缺陷报告跟进，C++29 论文仅在被指定为缺陷报告时纳入）不吸收该论文。Forge 的
+  `let_*` 已使用自有 operation：拥有 receiver、急切连接前驱、前驱与后继共享存储，与该论文的
+  实现技巧相符；sender 的公开分解、tag 与 `noexcept` 措辞保持 C++26 基线。
 - 2026-11-21 Búzios LWG Motion 1 将 [P4453R1](https://wg21.link/P4453R1)
   同时纳入 C++26 re-DIS 与 C++29 working draft。D3a 按
   [编辑 PR #9416](https://github.com/cplusplus/draft/pull/9416) 实现 `std::get_scheduler_allocator_t`
@@ -266,16 +271,19 @@ Sender attributes 的转发视图保留 `get_env(sndr)` 的确切类型（引用
   [P3826R5 §5.3](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3826r5.html)
   的 `starts_on(gpu, just()) | then(fn)` 例子要求 `just` 公布所提供环境的 domain，
   这是后续 factory attributes 的意图依据。
-- 批次 D3b.2 的 factory attributes 延后，与 D3b.3 和 D3b.4 的 adaptor 改动一并落地。
+- 批次 D3b.2 的 factory attributes 随 D3b 暂停。
   现有 adaptor 转发 child attributes，直接引入 factory 答案会暴露三类问题：报告错误的
   completion 位置、公布已被 adaptor 消除的 completion channel，以及在错误的环境中查询。
-- 后续计划（D3b 设计评审 §D；审查记录保存在仓库之外）：D3b.2–D3b.4 合并为一批落地，
-  D3b.3 按输出 channel 计算普通 adaptor 的 attributes，D3b.4 处理 `let_*`、
-  `continues_on`、`on`/`starts_on` 与 `affine` 等嵌套和调度算法，并修复环境值类别中
-  可恢复的丢失；D3b.5 做集成与 native handoff 测试。D3c 对锁定的 producer
-  （`when_all`、`associate`、`spawn_future`、`counting_scope`）、Forge producer 与
-  wait 调用方逐项验证，锁定头文件的改动伴随正式重新认证，最后两个 wait 消费者
-  一并改用精确的 completion domain。
+- D3b 暂停（负责人 2026-11-27 决定）：批次 D3b.3（单 child adaptor 按输出 channel 计算
+  completion attributes）经六轮独立审查仍未通过，未合入；最后两轮按逐组件的局部正确性判据
+  审查，剩余问题集中在可调用对象各重载是否抛异常的组合、`COMMON-DOMAIN` 的集合语义、
+  未使用 channel 的探测顺序，以及两种环境形式之间的调度器一致性。实现与验收判据保存在
+  分支 `archive/d3b3-adaptor-attrs`，六轮审查记录另行归档于仓库之外。主线保留现有
+  adaptor 的 FWD-ENV 转发及其已知的不精确回答：`then`、`upon_*` 等可能转发已被 adaptor
+  消除的 channel 或已改变的 completion 位置；`let_*`、`starts_on` 与闭包形式 `on` 的转发
+  （LWG 4419）；`continues_on` 拒绝时的回答；以及 `associate`、counting-scope wrapper 与
+  run loop 的回答。重启前须将 D3b.2–D3b.4 与 D3c 的 producer 部分作为一个整体统一规划，
+  并设定审查轮数上限；两个 wait 消费者继续使用 completion-domain fallback。
 - `[exec.sched]/1` 要求 progress 查询，而 `[exec.get.fwd.progress]/2` 又要求 scheduler；
   通过不含 progress 的内部 shape 打破循环。Inline 指定查询列表缺少 progress，仍保留显式成员。
 - Schedule sender 的 parity 与 signatures 一致性等措辞问题留待后续调度工作核对。
