@@ -42,7 +42,7 @@ if(NOT MSVC AND NOT CMAKE_CROSSCOMPILING AND CMAKE_CXX_COMPILER_ID MATCHES "^(GN
     set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -mavx2 -mpopcnt")
     # Execute one AVX2 and one POPCNT instruction directly; a host without them
     # faults, so the variant is not registered. No CPU-model runtime is needed.
-    check_cxx_source_runs([=[
+    _forge_check_native_cxx_source_runs([=[
 int main() {
     unsigned value = 3;
     __asm__ volatile("vpaddd %%ymm0, %%ymm0, %%ymm0; vzeroupper; popcnt %0, %0"

@@ -37,8 +37,9 @@ endif()
 if(no_shadow_root)
     # Provide stand-aside surfaces for the two remaining standard probes.
     include(CheckCXXSourceCompiles)
+    include("${FORGE_ROOT_DIR}/test/TestOwner.cmake")
     unset(fixture_has_native_constant_wrapper CACHE)
-    check_cxx_source_compiles("
+    _forge_check_native_cxx_source_compiles("
         #include <utility>
         using probe = std::constant_wrapper<1zu>;
         int main() { [[maybe_unused]] probe* value = nullptr; }

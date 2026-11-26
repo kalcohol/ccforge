@@ -142,11 +142,13 @@ endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/TestOwner.cmake")
 
+# Rule 5 limits this helper to forge_detect_cxx_source_compiles and
+# forge_expect_cxx_source_compiles, which prepare the probe inputs first.
 function(_forge_detect_cxx_source_compiles result_var source_file)
     unset(${result_var} CACHE)
     unset(${result_var})
     file(READ "${source_file}" _forge_probe_source)
-    check_cxx_source_compiles("${_forge_probe_source}" ${result_var})
+    _forge_check_prepared_cxx_source_compiles("${_forge_probe_source}" ${result_var})
     set(${result_var} "${${result_var}}" PARENT_SCOPE)
 endfunction()
 
@@ -172,7 +174,7 @@ function(forge_check_rejection_warning_control)
     else()
         string(APPEND CMAKE_CXX_FLAGS_${_forge_probe_config} " -Wunused-variable -Werror")
     endif()
-    check_cxx_source_compiles([=[
+    _forge_check_prepared_cxx_source_compiles([=[
         int main() {
             int unused = 0;
             return 0;

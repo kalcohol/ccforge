@@ -3,6 +3,7 @@ project(ForgeProbeFingerprintFixture LANGUAGES CXX)
 
 include(CheckCXXSourceCompiles)
 include("${CMAKE_CURRENT_SOURCE_DIR}/ForgeProbeFingerprint.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/TestOwner.cmake")
 
 set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES
     "${CMAKE_CURRENT_SOURCE_DIR}/include")

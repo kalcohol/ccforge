@@ -20,8 +20,9 @@ endif()
 # A header alone is enough to treat Hive as partial native support. Do not
 # inject into that implementation, even when it lacks the feature macro.
 include(CheckCXXSourceCompiles)
+include("${FORGE_ROOT_DIR}/test/TestOwner.cmake")
 unset(FORGE_HIVE_NATIVE_PROBE_OK CACHE)
-check_cxx_source_compiles("#include <version>
+_forge_check_native_cxx_source_compiles("#include <version>
 #if defined(__cpp_lib_hive)
 #error Native Hive feature macro
 #endif

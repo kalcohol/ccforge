@@ -4,7 +4,7 @@ _forge_compute_probe_fingerprint(
 _forge_refresh_probe_cache(
     FORGE_B03_FINGERPRINT "${_forge_fingerprint}" FORGE_B03_PROBE)
 
-check_cxx_source_compiles("
+_forge_check_native_cxx_source_compiles("
     #include <forge_b03_header.hpp>
     #include <forge_b03_flag_header.hpp>
     #include <version>

@@ -14,6 +14,7 @@ set(_forge_build_dir "${FORGE_FINGERPRINT_WORK_DIR}/build")
 file(MAKE_DIRECTORY "${_forge_source_dir}")
 file(COPY "${FORGE_FINGERPRINT_FIXTURE}/" DESTINATION "${_forge_source_dir}")
 file(COPY "${FORGE_FINGERPRINT_MODULE}" DESTINATION "${_forge_source_dir}")
+file(COPY "${CMAKE_CURRENT_LIST_DIR}/../TestOwner.cmake" DESTINATION "${_forge_source_dir}")
 
 set(_forge_configure_command
     "${CMAKE_COMMAND}"

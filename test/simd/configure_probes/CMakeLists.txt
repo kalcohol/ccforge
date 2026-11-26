@@ -20,7 +20,7 @@ forge_add_simd_configure_probe(
     "Forge simd backport must reject non-vectorizable long double SIMD specializations")
 unset(FORGE_SIMD_HAS_EXTENDED_INTEGER_TYPE CACHE)
 unset(FORGE_SIMD_HAS_EXTENDED_INTEGER_TYPE)
-check_cxx_source_compiles(
+_forge_check_native_cxx_source_compiles(
     "#if !defined(__SIZEOF_INT128__)
      #error __int128 unavailable
      #endif

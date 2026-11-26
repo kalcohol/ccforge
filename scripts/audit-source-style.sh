@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# audit-source-style.sh - lightweight whitespace checks for tracked source.
+# audit-source-style.sh - lightweight whitespace and layering checks.
 #
 # This intentionally does not impose a formatter or a line-length policy. It
 # catches only portable, low-noise defects that should not vary across tools.
@@ -72,3 +72,7 @@ if ((failures != 0)); then
 fi
 
 log "passed (${checked} tracked source files)"
+
+log "check standard/Forge layering"
+python3 -I scripts/check-layering.py --self-test
+python3 -I scripts/check-layering.py

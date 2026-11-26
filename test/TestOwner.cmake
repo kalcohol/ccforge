@@ -31,10 +31,15 @@ function(_forge_test_registration name_out target_out default_name)
 endfunction()
 
 function(_forge_filter_extension_include_root)
-    if(NOT FORGE_INCLUDE_DIR)
+    set(_extension_root "${FORGE_INCLUDE_DIR}")
+    if(NOT _extension_root AND FORGE_ROOT_DIR)
+        # Standalone probes can know the root before loading forge.cmake.
+        set(_extension_root "${FORGE_ROOT_DIR}/include")
+    endif()
+    if(NOT _extension_root)
         return()
     endif()
-    get_filename_component(_extension_root "${FORGE_INCLUDE_DIR}" REALPATH)
+    get_filename_component(_extension_root "${_extension_root}" REALPATH)
     set(_filtered_includes "")
     set(_separator "")
     foreach(_include IN LISTS CMAKE_REQUIRED_INCLUDES)
@@ -49,10 +54,24 @@ function(_forge_filter_extension_include_root)
     set(CMAKE_REQUIRED_INCLUDES "${_filtered_includes}" PARENT_SCOPE)
 endfunction()
 
-# Native header checks do not add the shadow root or backport definitions.
+function(_forge_check_prepared_cxx_source_compiles source result_var)
+    check_cxx_source_compiles("${source}" ${result_var})
+endfunction()
+
+# Native checks do not add the shadow root or backport definitions.
 function(_forge_check_native_cxx_source_compiles source result_var)
     _forge_filter_extension_include_root()
-    check_cxx_source_compiles("${source}" ${result_var})
+    _forge_check_prepared_cxx_source_compiles("${source}" ${result_var})
+endfunction()
+
+function(_forge_check_native_cxx_source_runs source result_var)
+    _forge_filter_extension_include_root()
+    check_cxx_source_runs("${source}" ${result_var})
+endfunction()
+
+function(_forge_check_std_cxx_source_compiles source result_var)
+    _forge_prepare_test_probe(OWNER STD)
+    _forge_check_prepared_cxx_source_compiles("${source}" ${result_var})
 endfunction()
 
 function(_forge_prepare_test_probe)
