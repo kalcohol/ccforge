@@ -1,7 +1,7 @@
 // Native handoff test.
 //
 // This translation unit pulls in every Forge backport wrapper that injects into
-// namespace std (<simd>, <execution>, <mdspan>, <linalg>, <hive>) through forge::forge
+// namespace std (<simd>, <execution>, <mdspan>, <linalg>, <hive>) through forge::std
 // when available, and exercises each public API. Its purpose is to catch ODR /
 // redefinition regressions in the "seamless injection" handshake:
 //

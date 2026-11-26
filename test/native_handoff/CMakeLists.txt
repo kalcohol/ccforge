@@ -1,7 +1,7 @@
 # Native handoff: all std-injecting wrappers in one TU. Guards against
 # ODR/redefinition regressions when a toolchain ships (partial) native support
 # and Forge is expected to stand aside.
-forge_add_runtime_test(native_handoff_test native_handoff_test.cpp NativeHandoff)
+forge_add_runtime_test(native_handoff_test native_handoff_test.cpp NativeHandoff OWNER STD)
 
 # Synthetic policy/mechanics controls, not claims about native Hive quality.
 # Preserve the parent's standard library, sanitizer and platform selection in

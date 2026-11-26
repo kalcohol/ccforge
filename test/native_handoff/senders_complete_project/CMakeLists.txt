@@ -20,10 +20,21 @@ set(FORGE_ENABLE_FORGE_IO OFF CACHE STRING "" FORCE)
 include("${FORGE_ROOT_DIR}/forge.cmake")
 
 add_executable(senders_complete_consumer main.cpp)
-target_include_directories(senders_complete_consumer BEFORE PRIVATE
-    "${FORGE_BACKPORT_DIR}"
-    "${surface_include}")
-target_link_libraries(senders_complete_consumer PRIVATE forge::forge)
-if(SENDERS_CASE STREQUAL "missing_scheduler_allocator")
-    target_compile_definitions(senders_complete_consumer PRIVATE FORGE_TEST_OMIT_SCHEDULER_ALLOCATOR)
+target_link_libraries(senders_complete_consumer PRIVATE forge::std)
+set(fixture_targets senders_complete_consumer)
+if(FORGE_ENABLE_EXTENSIONS)
+    include("${FORGE_ROOT_DIR}/test/TestOwner.cmake")
+    _forge_test_owner(forge_fixture_owner OWNER FORGE)
+    add_executable(forge_senders_complete_consumer
+        "${FORGE_ROOT_DIR}/test/forge/compile/native_handoff_any_stop_token.cpp")
+    target_link_libraries(forge_senders_complete_consumer PRIVATE ${forge_fixture_owner})
+    list(APPEND fixture_targets forge_senders_complete_consumer)
 endif()
+foreach(fixture_target IN LISTS fixture_targets)
+    target_include_directories(${fixture_target} BEFORE PRIVATE
+        "${FORGE_BACKPORT_DIR}"
+        "${surface_include}")
+    if(SENDERS_CASE STREQUAL "missing_scheduler_allocator")
+        target_compile_definitions(${fixture_target} PRIVATE FORGE_TEST_OMIT_SCHEDULER_ALLOCATOR)
+    endif()
+endforeach()

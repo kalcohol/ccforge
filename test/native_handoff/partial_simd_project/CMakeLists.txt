@@ -16,7 +16,7 @@ add_executable(partial_simd_consumer main.cpp)
 target_include_directories(partial_simd_consumer BEFORE PRIVATE
     "${FORGE_BACKPORT_DIR}"
     "${simd_fixture_include}")
-target_link_libraries(partial_simd_consumer PRIVATE forge::forge)
+target_link_libraries(partial_simd_consumer PRIVATE forge::std)
 if(MSVC)
     # Forward to the synthetic header used by the configure probes.
     get_target_property(definitions forge_std INTERFACE_COMPILE_DEFINITIONS)
