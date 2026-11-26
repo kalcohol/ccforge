@@ -1,0 +1,7 @@
+# Configuration                                  Required failing check
+lose_request.already_requested.2                 PA1
+duplicate_registration.request_race.2             PA2
+no_source_pin.same_thread_cleanup.2              PA4
+publish_before_immediate_forward.already_requested.2 PA5
+publish_before_registration.request_race.2       PA5
+terminal_before_cleanup.request_race.2           PA3

@@ -42,6 +42,8 @@
 //   Consumers        : sync_wait, sync_wait_with_variant (via this_thread)
 //   Stopped utils    : stopped_as_optional, stopped_as_error, unstoppable
 //   Schedulers       : inline_scheduler, run_loop (mutex+cv)
+//   Scheduler SPI    : parallel scheduler replacement proxy and backend types
+//                      (no scheduler frontend or replacement query)
 //   Stop tokens      : inplace_stop_source/token/callback, never_stop_token,
 //                      stoppable_token concepts
 //   Coroutine bridge : as_awaitable, with_awaitable_senders (C++20 coroutines)
@@ -130,6 +132,7 @@
 #include "execution/then.hpp"
 #include "execution/sync_wait.hpp"
 #include "execution/inline_scheduler.hpp"
+#include "execution/parallel_scheduler_replacement.hpp"
 #include "execution/run_loop.hpp"
 #include "execution/read_env.hpp"
 #include "execution/write_env.hpp"

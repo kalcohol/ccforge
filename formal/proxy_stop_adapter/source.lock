@@ -1,0 +1,31 @@
+{
+  "assessment": "Owner fix 2 narrows compile-time unstoppable classification back to the static observer form used in stop_token.hpp. The modeled first-query publication, registration, stop forwarding and terminal unregister protocol is unchanged. A requestable instance of a mismatched token with a compatible callback no longer bypasses that protocol just because a value-initialized token of the same type cannot stop. The model, checker and expected data are unchanged.",
+  "checker_digest": "27e50a6f27fa02034b2088100a98f4f28d74242dca312b70456cdf4eba271d9d",
+  "configuration_count": 10,
+  "date": "2026-11-26",
+  "expected_digest": "1140aa9715c943cc157dac9bc84fdecadbfcd28159c145c9398db7ec83944d36",
+  "last_full_qualification": {
+    "assessment": "Round 2 C-05: reviewed SC claim, source construction, registration, ready and notification against each return-time PA5 snapshot. The upstream contract still selects and runs immediate invocations during registration. The lost-request mutant skips request_stop in the adapter forwarder, while separate early-publication controls expose absent registration and undelivered pending stop. The sensitivity manifest pins all six named failures before maintenance. Moving the forwarder to a token-independent type retains its local source pin through return and leaves reset-before-terminal unchanged. Owned query values and callback compatibility gate entry to this model and the exact and unstoppable paths remain outside it.",
+    "checker_digest": "27e50a6f27fa02034b2088100a98f4f28d74242dca312b70456cdf4eba271d9d",
+    "configuration_count": 19,
+    "date": "2026-11-26",
+    "expected_digest": "1140aa9715c943cc157dac9bc84fdecadbfcd28159c145c9398db7ec83944d36",
+    "outcome_summary": {
+      "fail": 6,
+      "pass": 13
+    },
+    "python": "3.13.13",
+    "source_digest": "cc18f03555fff872f1874abce66cbfc5958cc5b2dd80843d47cd211c092b5237",
+    "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
+    "tier": "full"
+  },
+  "outcome_summary": {
+    "fail": 6,
+    "pass": 4
+  },
+  "python": "3.13.13",
+  "source": "backport/cpp26/execution/detail/proxy_stop_adapter.hpp",
+  "source_digest": "f955d581600070d45813fc37f007d62ecfc2cdd4726bceb2ac94fc8a3160aa47",
+  "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
+  "tier": "quick"
+}
