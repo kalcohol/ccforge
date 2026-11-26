@@ -30,7 +30,10 @@
 // Coroutine bridge — only compiled when coroutines are available
 #if defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L
 #include <coroutine>
+#include <cstddef>
 #include <exception>
+#include <memory>
+#include <new>
 #include <optional>
 #include <system_error>
 #include <tuple>
@@ -175,9 +178,15 @@ concept __transformed_sender_has_as_awaitable =
     };
 
 template<class S, class Promise>
-using __prepared_sender_t = __forge_domain::__forwarded_argument_t<decltype(
-    __adapt_for_await_completion(__transform_for_await(
-        std::declval<S>(), std::declval<Promise&>())))>;
+using __transformed_sender_t = decltype(__transform_for_await(
+    std::declval<S>(), std::declval<Promise&>()));
+
+template<class S>
+using __adapted_sender_t = decltype(__adapt_for_await_completion(std::declval<S>()));
+
+template<class S, class Promise>
+using __prepared_sender_t = __forge_domain::__forwarded_argument_t<
+    __adapted_sender_t<__transformed_sender_t<S, Promise>>>;
 
 template<class S, class Promise>
 concept __prepared_sender_has_multiple_values = requires {
@@ -186,7 +195,7 @@ concept __prepared_sender_has_multiple_values = requires {
 };
 
 template<class S, class Promise>
-concept __bridgeable_sender =
+concept __select_sender_bridge =
     __single_sender<S, Promise> &&
     // [exec.as.awaitable]/7.4 selects the bridge from the source expression.
     // Retain the identity fallback only for a known multi-value result.
@@ -203,7 +212,7 @@ consteval bool __as_awaitable_nothrow() {
                 std::declval<Promise&>()));
     } else if constexpr (__ordinary_awaitable<Value, Promise>) {
         return true;
-    } else if constexpr (__bridgeable_sender<Value, Promise>) {
+    } else if constexpr (__select_sender_bridge<Value, Promise>) {
         return false;
     } else {
         return true;
@@ -211,30 +220,31 @@ consteval bool __as_awaitable_nothrow() {
 }
 
 template<class S, class Promise>
-struct __awaitable {
-    S __sndr;
-    Promise* __promise;
+using __sender_await_value_t = typename __value_from_tuple<__forge_meta::__single_value_tuple_t<
+    __sender_completions_t<S, Promise>>>::type;
 
-    // Class template deduction follows [exec.as.awaitable]/7.4: S&& is not a
-    // forwarding reference, so the prepared sender cannot be an lvalue.
-    __awaitable(S&& sndr, Promise* promise)
-        : __sndr(std::move(sndr)), __promise(promise) {}
-
+// Keep the receiver independent of the operation whose type connect deduces.
+template<class Promise, class Value>
+struct __await_state {
     using env_t = __promise_env_t<Promise>;
-    using value_t = typename __value_from_tuple<__forge_meta::__single_value_tuple_t<
-        __sender_completions_t<S, Promise>>>::type;
     using stored_value_t = std::conditional_t<
-        std::is_void_v<value_t>, __unit, value_t>;
-    using result_t = std::optional<stored_value_t>;
+        std::is_void_v<Value>, __unit, Value>;
+
+    explicit __await_state(Promise& promise) noexcept : __promise(std::addressof(promise)) {}
+
+    Promise* __promise;
+    std::optional<stored_value_t> __result;
+    std::exception_ptr __exc;
+    std::coroutine_handle<> __coro;
 
     struct __recv {
         using receiver_concept = receiver_tag;
-        __awaitable* __self;
+        __await_state* __self;
 
         template<class... Vs>
         void set_value(Vs&&... vs) && noexcept {
             try {
-                if constexpr (std::is_void_v<value_t>) {
+                if constexpr (std::is_void_v<Value>) {
                     static_assert(sizeof...(Vs) == 0);
                     __self->__result.emplace();
                 } else {
@@ -275,43 +285,6 @@ struct __awaitable {
         }
     };
 
-    // Check connect's receiver-of Mandate in the receiver's actual environment.
-    static_assert(__forge_receiver_of<__recv, completion_signatures_of_t<S, env_of_t<__recv>>>,
-                  "awaited sender completions require a compatible promise (including unhandled_stopped)");
-    using op_t = connect_result_t<S, __recv>;
-
-    result_t __result;
-    std::exception_ptr __exc;
-    std::coroutine_handle<> __coro;
-
-    alignas(op_t) unsigned char __op_buf[sizeof(op_t)];
-    bool __op_constructed = false;
-    void (*__op_dtor)(void*) noexcept = nullptr;
-
-    ~__awaitable() noexcept {
-        if (__op_constructed && __op_dtor) __op_dtor(__op_buf);
-    }
-
-    bool await_ready() const noexcept { return false; }
-
-    auto await_suspend(std::coroutine_handle<Promise> h)
-        -> std::coroutine_handle<> {
-        __coro = h;
-        ::new(__op_buf) op_t(std::execution::connect(std::move(__sndr), __recv{this}));
-        __op_constructed = true;
-        __op_dtor = [](void* p) noexcept { static_cast<op_t*>(p)->~op_t(); };
-        __start_scope scope{this};
-        std::execution::start(*static_cast<op_t*>(static_cast<void*>(__op_buf)));
-        return scope.__resume;
-    }
-
-    auto await_resume() -> value_t {
-        if (__exc) std::rethrow_exception(__exc);
-        if constexpr (!std::is_void_v<value_t>) {
-            return std::move(*__result);
-        }
-    }
-
 private:
     static void __complete(const void* key, std::coroutine_handle<> next) noexcept {
         if (!__start_scope::__defer(key, next)) {
@@ -320,11 +293,176 @@ private:
     }
 };
 
+template<class S, class Promise>
+using __await_state_t = __await_state<Promise, __sender_await_value_t<S, Promise>>;
+
+template<class S, class Promise>
+concept __awaitable_sender_connectable =
+    __single_sender<S, Promise> &&
+    requires {
+        typename connect_result_t<S, typename __await_state_t<S, Promise>::__recv>;
+    };
+
+// An unconnectable prepared sender rejects a selected bridge; it does not
+// turn the bridge into an identity fallback.
+template<class S, class Promise>
+concept __as_awaitable_available =
+    __has_as_awaitable_member<S, Promise> ||
+    __transformed_sender_has_as_awaitable<S, Promise> ||
+    __ordinary_awaitable<S, Promise> ||
+    (!__select_sender_bridge<S, Promise>) ||
+    __awaitable_sender_connectable<__prepared_sender_t<S, Promise>, Promise>;
+
+// With identity adaptation, the transform result is the prepared sender and
+// is initialized directly in the bridge. Only the promise environment precedes it.
+template<class Value, class Promise, bool = __has_await_adaptor<__transformed_sender_t<Value, Promise>>>
+struct __await_chain {
+    using __env_t = __promise_env_t<Promise>;
+    __env_t __promise_env;
+
+    explicit __await_chain(Value&&, Promise& promise)
+        : __promise_env(__get_promise_env(promise)) {}
+
+    decltype(auto) __prepare(Value&& value) {
+        return std::execution::transform_sender(
+            std::forward<Value>(value), std::forward<__env_t>(__promise_env));
+    }
+};
+
+template<class Value, class Promise>
+struct __await_chain<Value, Promise, true> : __await_chain<Value, Promise, false> {
+    using __base = __await_chain<Value, Promise, false>;
+    using __transformed_t = __transformed_sender_t<Value, Promise>;
+    using __sender_env_t = decltype(std::execution::get_env(std::declval<__transformed_t&>()));
+    using __adaptor_t = decltype(std::execution::get_await_completion_adaptor(
+        std::declval<__sender_env_t>()));
+
+    __transformed_t __transformed;
+    __sender_env_t __sender_env;
+    __adaptor_t __adaptor;
+
+    explicit __await_chain(Value&& value, Promise& promise)
+        : __base(std::forward<Value>(value), promise),
+          __transformed(__base::__prepare(std::forward<Value>(value))),
+          __sender_env(std::execution::get_env(__transformed)),
+          __adaptor(std::execution::get_await_completion_adaptor(
+              std::forward<__sender_env_t>(__sender_env))) {}
+
+    decltype(auto) __prepare(Value&&) {
+        return std::forward<__adaptor_t>(__adaptor)(std::forward<__transformed_t>(__transformed));
+    }
+};
+
+// The erased chain is constructed in place and is never relocated. Its type
+// is not an awaiter template argument, so it cannot contribute to co_await ADL.
+template<std::size_t Size, std::size_t Align>
+class __await_storage {
+    alignas(Align) unsigned char __bytes[Size];
+    void (*__destroy)(__await_storage&) noexcept = nullptr;
+
+public:
+    __await_storage() noexcept = default;
+    __await_storage(const __await_storage&) = delete;
+    __await_storage& operator=(const __await_storage&) = delete;
+
+    template<class Make>
+    explicit __await_storage(Make&& make) {
+        __emplace(std::forward<Make>(make));
+    }
+
+    ~__await_storage() {
+        if (__destroy) __destroy(*this);
+    }
+
+    template<class T>
+    T& __get() noexcept {
+        return *std::launder(static_cast<T*>(static_cast<void*>(__bytes)));
+    }
+
+    template<class Make>
+    auto& __emplace(Make&& make) {
+        using T = decltype(std::forward<Make>(make)());
+        static_assert(sizeof(T) <= Size && alignof(T) <= Align,
+                      "object size and alignment must fit the awaitable storage");
+        auto* object = ::new (static_cast<void*>(__bytes)) T(std::forward<Make>(make)());
+        __destroy = [](__await_storage& self) noexcept { self.template __get<T>().~T(); };
+        return *object;
+    }
+};
+
+template<class Fun, class... Args>
+using __call_result_t = decltype(std::declval<Fun>()(std::declval<Args>()...));
+
 } // namespace __forge_awaitable
+
+struct as_awaitable_t;
+
+// Keep the draft's std::execution namespace and its two associated type
+// arguments. [basic.lookup.argdep]/3 excludes constant template arguments.
+template<class S, class Promise, std::size_t Size, std::size_t Align>
+struct __sender_awaitable {
+    using value_t = __forge_awaitable::__sender_await_value_t<S, Promise>;
+
+private:
+    friend struct as_awaitable_t;
+
+    using __state_t = __forge_awaitable::__await_state_t<S, Promise>;
+    using __recv = typename __state_t::__recv;
+    template<class Value>
+    using __chain_t = __forge_awaitable::__await_chain<Value, Promise>;
+
+    // Check connect's receiver-of Mandate in the receiver's actual environment.
+    static_assert(__forge_receiver_of<__recv, completion_signatures_of_t<S, env_of_t<__recv>>>,
+                  "awaited sender completions require a compatible promise (including unhandled_stopped)");
+    using op_t = connect_result_t<S, __recv>;
+
+    // Destruction unwinds the operation, the prepared sender, then the chain.
+    __forge_awaitable::__await_storage<Size, Align> __owners;
+    S __sndr;
+    __state_t __state;
+    __forge_awaitable::__await_storage<sizeof(op_t), alignof(op_t)> __operation;
+
+    template<class Value>
+    __sender_awaitable(Value&& value, Promise& promise)
+        : __owners([&]() -> __chain_t<Value> {
+              return __chain_t<Value>(std::forward<Value>(value), promise);
+          }),
+          __sndr(__owners.template __get<__chain_t<Value>>().__prepare(std::forward<Value>(value))),
+          __state(promise) {}
+
+public:
+    // The operation and its receiver point into this awaitable.
+    __sender_awaitable(const __sender_awaitable&) = delete;
+    __sender_awaitable(__sender_awaitable&&) = delete;
+    __sender_awaitable& operator=(const __sender_awaitable&) = delete;
+    __sender_awaitable& operator=(__sender_awaitable&&) = delete;
+
+    bool await_ready() const noexcept { return false; }
+
+    auto await_suspend(std::coroutine_handle<Promise> h)
+        -> std::coroutine_handle<> {
+        auto* const state = std::addressof(__state);
+        state->__coro = h;
+        auto& op = __operation.__emplace([&]() -> op_t {
+            return std::execution::connect(std::forward<S>(__sndr), __recv{state});
+        });
+        __forge_awaitable::__start_scope scope{state};
+        std::execution::start(op);
+        return scope.__resume;
+    }
+
+    auto await_resume() -> value_t {
+        if (__state.__exc) std::rethrow_exception(__state.__exc);
+        if constexpr (!std::is_void_v<value_t>) {
+            return std::move(*__state.__result);
+        }
+    }
+};
 
 // as_awaitable(expr, promise) — [exec.as.awaitable]
 struct as_awaitable_t {
     template<class Value, class Promise>
+        requires __forge_awaitable::__as_awaitable_available<Value, Promise>
     [[nodiscard]] decltype(auto) operator()(Value&& value, Promise& promise) const
         noexcept(__forge_awaitable::__as_awaitable_nothrow<Value, Promise>()) {
         using namespace __forge_awaitable;
@@ -339,11 +477,12 @@ struct as_awaitable_t {
                 static_cast<Value&&>(value), promise)).as_awaitable(promise);
         } else if constexpr (__ordinary_awaitable<Value, Promise>) {
             return static_cast<Value&&>(value);
-        } else if constexpr (__bridgeable_sender<Value, Promise>) {
-            return __awaitable{
-                __adapt_for_await_completion(__transform_for_await(
-                    static_cast<Value&&>(value), promise)),
-                std::addressof(promise)};
+        } else if constexpr (__select_sender_bridge<Value, Promise>) {
+            using chain_t = __await_chain<Value, Promise>;
+            // __prepared_sender_t preserves lvalue references per LWG 4547.
+            return __sender_awaitable<__prepared_sender_t<Value, Promise>, Promise,
+                                      sizeof(chain_t), alignof(chain_t)>{
+                static_cast<Value&&>(value), promise};
         } else {
             return static_cast<Value&&>(value);
         }
@@ -384,7 +523,8 @@ struct with_awaitable_senders {
     }
 
     template<class Value>
-    decltype(auto) await_transform(Value&& value) {
+    auto await_transform(Value&& value)
+        -> __forge_awaitable::__call_result_t<as_awaitable_t, Value, Promise&> {
         auto& prom = static_cast<Promise&>(*this);
         return as_awaitable(std::forward<Value>(value), prom);
     }

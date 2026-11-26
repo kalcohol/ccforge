@@ -18,6 +18,7 @@ static_assert(std::same_as<ex::completion_signatures_of_t<a::ref_awaiter>, ref_s
 static_assert(std::same_as<ex::completion_signatures_of_t<a::ref_awaiter, ex::env<>>, ref_sigs>);
 static_assert(std::same_as<ex::completion_signatures_of_t<a::void_awaiter>, void_sigs>);
 static_assert(std::same_as<ex::completion_signatures_of_t<a::void_awaiter, ex::env<>>, void_sigs>);
+static_assert(std::same_as<ex::completion_signatures_of_t<a::cv_void_awaiter, ex::env<>>, void_sigs>);
 static_assert(ex::sender<a::member_awaitable> && ex::sender<a::free_awaitable>);
 static_assert(ex::sender_in<a::member_adapted, ex::env<>>);
 static_assert(!ex::sender_in<a::member_adapted>); // No env-promise in the nullary form.
@@ -50,6 +51,20 @@ static_assert(!noexcept(ex::as_awaitable(a::throwing_source{}, std::declval<a::t
 static_assert(noexcept(ex::as_awaitable(a::int_awaiter{}, std::declval<a::mixin_promise&>())));
 static_assert(!noexcept(ex::as_awaitable(ex::just(1), std::declval<a::promise&>())));
 static_assert(noexcept(ex::as_awaitable(a::not_awaitable{}, std::declval<a::promise&>())));
+
+struct overriding_promise : ex::with_awaitable_senders<overriding_promise> {
+    using ex::with_awaitable_senders<overriding_promise>::await_transform;
+
+    template<ex::sender S>
+    auto await_transform(S&&) -> std::suspend_never { return {}; }
+};
+
+// The constrained promise overload stays preferred over the unconstrained
+// mixin for a valid rvalue sender, without hiding the mixin's identity path.
+static_assert(std::same_as<decltype(std::declval<overriding_promise&>().await_transform(
+    ex::just(1))), std::suspend_never>);
+static_assert(std::same_as<decltype(std::declval<overriding_promise&>().await_transform(
+    a::not_awaitable{})), a::not_awaitable&&>);
 
 template<class... ValueSigs>
 struct bridge_source {
@@ -93,6 +108,86 @@ static_assert(std::same_as<awaitable_result<source_adapting_to_multiple_values>,
 static_assert(std::same_as<awaitable_result<lvalue_adapted_sender&>, a::int_awaiter>);
 static_assert(std::same_as<awaitable_result<lvalue_adapted_sender>, lvalue_adapted_sender&&>);
 
+template<bool SingleForLvalues>
+struct category_values : a::lvalue_sender {
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept -> std::conditional_t<
+        std::is_lvalue_reference_v<Self> == SingleForLvalues,
+        ex::completion_signatures<ex::set_value_t(int)>,
+        ex::completion_signatures<ex::set_value_t(int), ex::set_value_t(int&)>> { return {}; }
+};
+
+using adapted_single_lvalue = a::bridge_adaptor_source<category_values<true>>;
+using adapted_multiple_lvalue = a::bridge_adaptor_source<category_values<false>>;
+using lvalue_bridge = awaitable_result<adapted_single_lvalue>;
+static_assert(std::same_as<decltype(std::declval<lvalue_bridge&>().await_resume()), int>);
+static_assert(std::same_as<awaitable_result<adapted_multiple_lvalue>, adapted_multiple_lvalue&&>);
+static_assert(std::same_as<awaitable_result<category_values<false>&>, category_values<false>&>);
+
+// Keep the prepared sender and promise the same while enlarging the retained source.
+struct padded_adapted_lvalue : adapted_single_lvalue {
+    alignas(64) unsigned char padding[64]{};
+};
+using padded_lvalue_bridge = awaitable_result<padded_adapted_lvalue>;
+static_assert(std::same_as<decltype(std::declval<padded_lvalue_bridge&>().await_resume()), int>);
+static_assert(!std::same_as<lvalue_bridge, padded_lvalue_bridge>);
+
+template<class Bridge, class Source>
+concept directly_constructible_bridge = requires(Source&& source, a::promise& promise) {
+    Bridge{std::forward<Source>(source), promise};
+};
+static_assert(!directly_constructible_bridge<lvalue_bridge, padded_adapted_lvalue>);
+
+template<class S>
+concept has_as_awaitable = requires(S&& s, a::promise& p) {
+    ex::as_awaitable(std::forward<S>(s), p);
+};
+template<class S>
+concept has_await_transform = requires(S&& s, a::mixin_promise& p) {
+    p.await_transform(std::forward<S>(s));
+};
+using move_only_sender = decltype(ex::just(std::unique_ptr<int>{}));
+static_assert(std::same_as<awaitable_result<move_only_sender&>, move_only_sender&>);
+static_assert(std::same_as<awaitable_result<const move_only_sender&>, const move_only_sender&>);
+// An eligible source adapting to an unconnectable lvalue is not an identity
+// fallback. Detect the rejection without instantiating the awaitable body.
+static_assert(!has_as_awaitable<a::bridge_adaptor_source<move_only_sender>>);
+static_assert(!has_await_transform<a::bridge_adaptor_source<move_only_sender>>);
+
+// A prepared rvalue with signatures but no rvalue connect is also rejected
+// in dependent requires, instead of producing a hard instantiation error.
+using unconnectable_rvalue = category_values<false>;
+using connectable_rvalue = bridge_source<ex::set_value_t(int)>;
+static_assert(ex::sender_in<unconnectable_rvalue, ex::env<>>);
+static_assert(!has_as_awaitable<a::bridge_adaptor_source<unconnectable_rvalue, true>>);
+static_assert(!has_await_transform<a::bridge_adaptor_source<unconnectable_rvalue, true>>);
+static_assert(has_as_awaitable<a::bridge_adaptor_source<connectable_rvalue, true>>);
+static_assert(has_await_transform<a::bridge_adaptor_source<connectable_rvalue, true>>);
+
+struct immovable_operation {
+    using operation_state_concept = ex::operation_state_tag;
+    immovable_operation() = default;
+    immovable_operation(const immovable_operation&) = delete;
+    immovable_operation(immovable_operation&&) = delete;
+    void start() & noexcept {}
+};
+
+struct immovable_operation_sender : a::lvalue_sender {
+    template<ex::receiver R>
+    auto connect(R) & noexcept -> immovable_operation { return {}; }
+};
+
+template<class T>
+constexpr bool pinned = !std::is_copy_constructible_v<T> && !std::is_move_constructible_v<T> &&
+    !std::is_copy_assignable_v<T> && !std::is_move_assignable_v<T>;
+
+using immovable_op_bridge = awaitable_result<immovable_operation_sender&>;
+using owned_bridge = awaitable_result<decltype(ex::just(1))>;
+static_assert(ex::operation_state<immovable_operation>);
+static_assert(std::same_as<ex::connect_result_t<immovable_operation_sender&, a::receiver>,
+    immovable_operation>);
+static_assert(pinned<immovable_op_bridge> && pinned<lvalue_bridge> && pinned<owned_bridge>);
+
 template<bool HasAdlOperator>
 struct member_co_await_sender : bridge_source<ex::set_value_t(int)> {
     auto operator co_await() && noexcept -> a::int_awaiter { return {}; }
@@ -121,6 +216,7 @@ int main() {
     using bridge_t = decltype(ex::as_awaitable(ex::just(1), std::declval<a::promise&>()));
     static_assert(std::destructible<bridge_t>); // Deleted operator& must not be used.
     auto direct = ex::as_awaitable(a::adapted_sender<true, true>{}, promise);
+    [[maybe_unused]] auto suspend_immovable = &immovable_op_bridge::await_suspend;
     using stopped_bridge_t = decltype(ex::as_awaitable(ex::just_stopped(),
         std::declval<a::explicit_stopped_promise&>()));
     static_assert(std::destructible<stopped_bridge_t>);

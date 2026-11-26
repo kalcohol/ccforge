@@ -20,6 +20,10 @@ struct void_awaiter {
     void await_suspend(std::coroutine_handle<>) const noexcept {}
     void await_resume() const noexcept {}
 };
+struct cv_void_awaiter : void_awaiter {
+    using result_t = const void;
+    auto await_resume() const noexcept -> result_t {}
+};
 struct ref_awaiter {
     int* value;
     bool await_ready() const noexcept { return true; }
@@ -146,6 +150,28 @@ struct lvalue_sender {
     };
     template<ex::receiver R>
     auto connect(R r) & -> operation<R> { return {std::move(r)}; }
+};
+
+// The prepared sender lives outside the environment and the adaptor.
+template<class S, bool Consume = false>
+struct bridge_adaptor_source {
+    using sender_concept = ex::sender_tag;
+    S* prepared;
+
+    template<class Self, class Env>
+    static constexpr auto get_completion_signatures() noexcept
+        -> ex::completion_signatures<ex::set_value_t(int)> { return {}; }
+
+    auto get_env() const noexcept {
+        auto adaptor = [target = prepared](auto&&) -> decltype(auto) {
+            if constexpr (Consume) {
+                return S(std::move(*target));
+            } else {
+                return *target;
+            }
+        };
+        return ex::prop(ex::get_await_completion_adaptor, adaptor);
+    }
 };
 
 // Vary every expression in 7.2 independently, while keeping explicit types.

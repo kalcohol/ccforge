@@ -551,15 +551,27 @@ set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_saved_defs}
 forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_RVALUE_BRIDGE_CONTROL
     test_execution_reject_awaitable.cpp ON "An rvalue sender must be accepted by the sender bridge")
 set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_saved_defs} -DFORGE_AWAITABLE_CASE=10)
-forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_REJECT_LVALUE_BRIDGE
-    test_execution_reject_awaitable.cpp OFF "The sender bridge must not decay-copy an lvalue sender")
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_LVALUE_BRIDGE_CONTROL
+    test_execution_reject_awaitable.cpp ON "An eligible lvalue sender must be accepted by the sender bridge")
 set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_saved_defs}
     -DFORGE_AWAITABLE_CASE=11 -DFORGE_AWAITABLE_POSITIVE=1)
 forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_ADAPTED_VALUE_BRIDGE_CONTROL
     test_execution_reject_awaitable.cpp ON "The sender bridge must accept a single-value sender returned by value")
 set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_saved_defs} -DFORGE_AWAITABLE_CASE=11)
-forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_REJECT_ADAPTED_LVALUE_BRIDGE
-    test_execution_reject_awaitable.cpp OFF "The sender bridge must reject a single-value sender returned by lvalue reference")
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_ADAPTED_LVALUE_BRIDGE_CONTROL
+    test_execution_reject_awaitable.cpp ON "The sender bridge must accept an eligible sender returned by lvalue reference")
+foreach(_entry IN ITEMS "12;MOVE_ONLY_LVALUE" "13;CONST_MOVE_ONLY_LVALUE"
+                        "14;IMMOVABLE_SOURCE" "15;ADAPTED_MOVE_ONLY_LVALUE")
+    list(GET _entry 0 _case)
+    list(GET _entry 1 _suffix)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_saved_defs}
+        -DFORGE_AWAITABLE_CASE=${_case} -DFORGE_AWAITABLE_POSITIVE=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_CONTROL_${_suffix}
+        test_execution_reject_awaitable.cpp ON "Awaitable bridge positive control ${_suffix} must compile and link")
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_awaitable_saved_defs} -DFORGE_AWAITABLE_CASE=${_case})
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_AWAITABLE_REJECT_${_suffix}
+        test_execution_reject_awaitable.cpp OFF "The sender bridge must reject ${_suffix}")
+endforeach()
 if(MSVC)
     target_compile_options(test_execution_awaitable_conformance PRIVATE /bigobj)
     target_compile_options(test_execution_awaitable_conformance_runtime PRIVATE /bigobj)

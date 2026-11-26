@@ -32,27 +32,17 @@ struct limited_receiver {
     void set_stopped() && noexcept {}
 #endif
 };
-#if FORGE_AWAITABLE_CASE == 11
-using prepared_sender = decltype(ex::just(std::unique_ptr<int>{}));
-
-struct bridge_adaptor_source {
+#if FORGE_AWAITABLE_CASE == 14
+struct custom_source : a::lvalue_sender {
     using sender_concept = ex::sender_tag;
-    prepared_sender* prepared;
-
-    template<class Self, class Env>
-    static constexpr auto get_completion_signatures() noexcept
-        -> ex::completion_signatures<ex::set_value_t(std::unique_ptr<int>)> { return {}; }
-
-    auto get_env() const noexcept {
-        auto adaptor = [prepared = prepared](auto&&) noexcept -> decltype(auto) {
+    custom_source() = default;
 #ifdef FORGE_AWAITABLE_POSITIVE
-            return prepared_sender(std::move(*prepared));
+    custom_source(const custom_source&) = default;
+    custom_source(custom_source&&) = default;
 #else
-            return *prepared;
+    custom_source(const custom_source&) = delete;
+    custom_source(custom_source&&) = delete;
 #endif
-        };
-        return ex::prop(ex::get_await_completion_adaptor, adaptor);
-    }
 };
 #endif
 int main() {
@@ -103,17 +93,54 @@ int main() {
     auto source = ex::just(1);
 #ifdef FORGE_AWAITABLE_POSITIVE
     auto result = ex::as_awaitable(std::move(source), promise);
-    static_assert(std::same_as<decltype(result.await_resume()), int>);
 #else
     auto result = ex::as_awaitable(source, promise);
 #endif
+    static_assert(std::same_as<decltype(result.await_resume()), int>);
 #elif FORGE_AWAITABLE_CASE == 11
     a::promise promise;
-    auto prepared = ex::just(std::make_unique<int>(1));
-    auto result = ex::as_awaitable(bridge_adaptor_source{&prepared}, promise);
+    auto prepared = ex::just(1);
 #ifdef FORGE_AWAITABLE_POSITIVE
-    static_assert(std::same_as<decltype(result.await_resume()), std::unique_ptr<int>>);
+    auto result = ex::as_awaitable(a::bridge_adaptor_source<decltype(prepared), true>{&prepared}, promise);
+#else
+    auto result = ex::as_awaitable(a::bridge_adaptor_source<decltype(prepared)>{&prepared}, promise);
 #endif
+    static_assert(std::same_as<decltype(result.await_resume()), int>);
+#elif FORGE_AWAITABLE_CASE == 12
+    a::promise promise;
+    auto source = ex::just(std::make_unique<int>(1));
+#ifdef FORGE_AWAITABLE_POSITIVE
+    decltype(auto) result = ex::as_awaitable(std::move(source), promise);
+#else
+    decltype(auto) result = ex::as_awaitable(source, promise);
+#endif
+    static_assert(std::same_as<decltype(result.await_resume()), std::unique_ptr<int>>);
+#elif FORGE_AWAITABLE_CASE == 13
+    a::promise promise;
+#ifdef FORGE_AWAITABLE_POSITIVE
+    const auto source = ex::just(1);
+    using value_t = int;
+#else
+    const auto source = ex::just(std::make_unique<int>(1));
+    using value_t = std::unique_ptr<int>;
+#endif
+    decltype(auto) result = ex::as_awaitable(source, promise);
+    static_assert(std::same_as<decltype(result.await_resume()), value_t>);
+#elif FORGE_AWAITABLE_CASE == 14
+    a::promise promise;
+    custom_source source;
+    static_assert(ex::operation_state<decltype(source.connect(a::receiver{}))>);
+    decltype(auto) result = ex::as_awaitable(source, promise);
+    static_assert(std::same_as<decltype(result.await_resume()), int>);
+#elif FORGE_AWAITABLE_CASE == 15
+    a::promise promise;
+    auto prepared = ex::just(std::make_unique<int>(1));
+#ifdef FORGE_AWAITABLE_POSITIVE
+    auto result = ex::as_awaitable(a::bridge_adaptor_source<decltype(prepared), true>{&prepared}, promise);
+#else
+    auto result = ex::as_awaitable(a::bridge_adaptor_source<decltype(prepared)>{&prepared}, promise);
+#endif
+    static_assert(std::same_as<decltype(result.await_resume()), std::unique_ptr<int>>);
 #endif
     (void)result;
 }
