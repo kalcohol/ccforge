@@ -10,7 +10,7 @@ set(log_dir "${FORGE_ROOT_DIR}/build/review/submdspan-gates/${log_id}")
 file(MAKE_DIRECTORY "${log_dir}")
 
 foreach(gate_case IN ITEMS
-        backport complete_partial_dependencies complete_all mixed_native_padded
+        backport complete_partial_dependencies complete_one_padded_name complete_all mixed_native_padded
         partial_available partial_unavailable
         positive_control_failure negative_control_success)
     set(args

@@ -9,6 +9,27 @@
 #include <type_traits>
 #include <utility>
 
+// Hosts that still check the pre-LWG 4603/4606 layout_stride preconditions:
+// the MSVC STL in iterator-debug builds, and libc++ in a hardened mode (zig
+// 0.14's bundled libc++ defaults to debug hardening). libc++ rejects zero or
+// negative strides in every hardened mode and checks the old permutation rule
+// from the extensive mode on. Leave the other portable cases enabled there.
+#if defined(_MSVC_STL_VERSION) && _ITERATOR_DEBUG_LEVEL != 0
+#define FORGE_TEST_HOST_CHECKS_POSITIVE_STRIDES 1
+#define FORGE_TEST_HOST_CHECKS_STRIDE_PERMUTATION 1
+#elif defined(_LIBCPP_HARDENING_MODE) && defined(_LIBCPP_HARDENING_MODE_NONE) && \
+    _LIBCPP_HARDENING_MODE != _LIBCPP_HARDENING_MODE_NONE
+#define FORGE_TEST_HOST_CHECKS_POSITIVE_STRIDES 1
+#if defined(_LIBCPP_HARDENING_MODE_FAST) && _LIBCPP_HARDENING_MODE == _LIBCPP_HARDENING_MODE_FAST
+#define FORGE_TEST_HOST_CHECKS_STRIDE_PERMUTATION 0
+#else
+#define FORGE_TEST_HOST_CHECKS_STRIDE_PERMUTATION 1
+#endif
+#else
+#define FORGE_TEST_HOST_CHECKS_POSITIVE_STRIDES 0
+#define FORGE_TEST_HOST_CHECKS_STRIDE_PERMUTATION 0
+#endif
+
 namespace {
 
 template<class Extents, class Layout = std::layout_right>
@@ -176,6 +197,67 @@ static_assert(empty_converted_transposes());
 static_assert(all_narrow_converted_transposes<unsigned char>());
 static_assert(all_narrow_converted_transposes<signed char>());
 
+constexpr bool static_zero_padding_transposes() {
+    using left = std::layout_left_padded<0>;
+    using right = std::layout_right_padded<0>;
+    using left_extents = std::extents<int, 0, 3>;
+    using right_extents = std::extents<int, 3, 0>;
+    return check_padded_transpose<left, left_extents>(left::mapping<left_extents>(left_extents{})) &&
+           check_padded_transpose<right, right_extents>(right::mapping<right_extents>(right_extents{}));
+}
+
+static_assert(static_zero_padding_transposes());
+
+#if !FORGE_TEST_HOST_CHECKS_POSITIVE_STRIDES
+constexpr bool imported_zero_stride_transposes() {
+    using left = std::layout_left_padded<std::dynamic_extent>;
+    using right = std::layout_right_padded<std::dynamic_extent>;
+    using extents = std::dextents<int, 2>;
+    // The padded extent is positive but the zero stride is unused.
+    return converted_padded_transpose<left>(extents(3, 0), 0, 0) &&
+           converted_padded_transpose<right>(extents(0, 3), 0, 0) &&
+           converted_padded_transpose<left>(extents(3, 1), 0, 3) &&
+           converted_padded_transpose<right>(extents(1, 3), 0, 3);
+}
+
+template<bool Left>
+constexpr bool narrowed_unused_stride_transposes() {
+    using index_t = signed char;
+    using wide_extents = std::dextents<int, 2>;
+    using narrow_extents = std::dextents<index_t, 2>;
+    using narrow_strided = std::layout_stride::mapping<narrow_extents>;
+    constexpr int stride = int((std::numeric_limits<index_t>::max)()) + 1;
+    constexpr auto expected = static_cast<index_t>(stride);
+    static_assert(expected < 0);
+    const std::layout_stride::mapping<wide_extents> wide(
+        wide_extents(Left ? 3 : 1, Left ? 1 : 3),
+        Left ? std::array{1, stride} : std::array{stride, 1});
+    const narrow_strided narrow(wide);
+    int data[] = {1, 2, 3};
+    const std::mdspan<int, narrow_extents, std::layout_stride> source(data, narrow);
+    const auto t = std::linalg::transposed(source);
+    if (narrow.stride(Left ? 1 : 0) != expected ||
+        t.stride(Left ? 0 : 1) != expected || t.stride(Left ? 1 : 0) != 1 ||
+        t.mapping().required_span_size() != 3 || &t[Left ? 0 : 2, Left ? 2 : 0] != data + 2) {
+        return false;
+    }
+#if defined(FORGE_FORCE_MDSPAN_PADDED_LAYOUTS_BACKPORT) || !defined(FORGE_HAS_NATIVE_MDSPAN_PADDED_LAYOUTS)
+    // Exercise Forge's import. Native padded mappings may impose extra checks.
+    using layout = std::conditional_t<Left, std::layout_left_padded<std::dynamic_extent>,
+                                      std::layout_right_padded<std::dynamic_extent>>;
+    const typename layout::template mapping<narrow_extents> padded(wide);
+    return padded.stride(Left ? 1 : 0) == expected &&
+           check_padded_transpose<layout, narrow_extents>(padded);
+#else
+    return true;
+#endif
+}
+
+static_assert(imported_zero_stride_transposes());
+static_assert(narrowed_unused_stride_transposes<true>());
+static_assert(narrowed_unused_stride_transposes<false>());
+#endif
+
 template<class L>
 constexpr bool fixed_padded_transposes() {
     return padded_transpose<L>(std::extents<int, 9, 13>{}) &&
@@ -230,6 +312,7 @@ TEST(LinalgTransposeSpanSize, PublicStandardLayoutViewsPreserveTheirValues) {
 }
 
 TEST(LinalgTransposeSpanSize, PaddedStaticAndDynamicMappingIdentity) {
+    EXPECT_TRUE(static_zero_padding_transposes());
     EXPECT_TRUE(fixed_padded_transposes<std::layout_left_padded<8>>());
     EXPECT_TRUE(fixed_padded_transposes<std::layout_right_padded<8>>());
     EXPECT_TRUE(fixed_padded_transposes<std::layout_left_padded<std::dynamic_extent>>());
@@ -242,9 +325,16 @@ TEST(LinalgTransposeSpanSize, PaddedStaticAndDynamicMappingIdentity) {
 
 TEST(LinalgTransposeSpanSize, ConvertedPaddedEmptyMappingIdentity) {
     EXPECT_TRUE(empty_converted_transposes());
+#if !FORGE_TEST_HOST_CHECKS_POSITIVE_STRIDES
+    EXPECT_TRUE(imported_zero_stride_transposes());
+#endif
 }
 
 TEST(LinalgTransposeSpanSize, ConvertedPaddedNarrowIndexMappingIdentity) {
     EXPECT_TRUE(all_narrow_converted_transposes<unsigned char>());
     EXPECT_TRUE(all_narrow_converted_transposes<signed char>());
+#if !FORGE_TEST_HOST_CHECKS_POSITIVE_STRIDES
+    EXPECT_TRUE(narrowed_unused_stride_transposes<true>());
+    EXPECT_TRUE(narrowed_unused_stride_transposes<false>());
+#endif
 }

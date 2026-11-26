@@ -107,9 +107,19 @@ if(FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER)
                 test_submdspan_${_forge_portable_case}
                 "${FORGE_SUBMDSPAN_RUNTIME_DIR}/test_submdspan_portable.cpp")
             target_link_libraries(test_submdspan_${_forge_portable_case} PRIVATE forge::std)
+            if(_forge_submdspan_backport_tests OR FORGE_SUBMDSPAN_FULL)
+                target_compile_definitions(test_submdspan_${_forge_portable_case} PRIVATE
+                    FORGE_TEST_SUBMDSPAN_EXTENT_SLICE=1)
+            endif()
             if(_forge_portable_case STREQUAL "portable_padded")
                 target_compile_definitions(test_submdspan_${_forge_portable_case} PRIVATE
                     FORGE_TEST_SUBMDSPAN_PADDED=1)
+            elseif(NOT _forge_padded_backport_tests AND NOT FORGE_MDSPAN_PADDED_LAYOUTS_FULL
+                    AND FORGE_MDSPAN_PADDED_LAYOUTS_PARTIAL_LEFT
+                    AND FORGE_MDSPAN_PADDED_LAYOUTS_PARTIAL_RIGHT)
+                # A partial native host can still support the mapping conversions.
+                target_compile_definitions(test_submdspan_${_forge_portable_case} PRIVATE
+                    FORGE_TEST_SUBMDSPAN_PARTIAL_PADDED=1)
             endif()
             add_test(NAME submdspan_${_forge_portable_case}_runtime
                 COMMAND test_submdspan_${_forge_portable_case})

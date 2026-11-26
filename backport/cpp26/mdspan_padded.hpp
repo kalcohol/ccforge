@@ -300,13 +300,9 @@ struct layout_left_padded {
             requires is_constructible_v<OtherExtents, extents_type>
         constexpr explicit(!is_convertible_v<extents_type, OtherExtents>)
         operator layout_stride::mapping<OtherExtents>() const noexcept {
-            array<typename OtherExtents::index_type, rank_> converted{};
-            for (rank_type r = 0; r < rank_; ++r) {
-                converted[r] = static_cast<typename OtherExtents::index_type>(
-                    stride(r));
-            }
-            return layout_stride::mapping<OtherExtents>(
-                OtherExtents(extents_), converted);
+            // Let the mapping conversion narrow the strides. An unused stride
+            // can become negative, which the array constructor does not allow.
+            return layout_stride::mapping<OtherExtents>(*this);
         }
 
         constexpr mapping& operator=(const mapping&) noexcept = default;
@@ -603,13 +599,9 @@ struct layout_right_padded {
             requires is_constructible_v<OtherExtents, extents_type>
         constexpr explicit(!is_convertible_v<extents_type, OtherExtents>)
         operator layout_stride::mapping<OtherExtents>() const noexcept {
-            array<typename OtherExtents::index_type, rank_> converted{};
-            for (rank_type r = 0; r < rank_; ++r) {
-                converted[r] = static_cast<typename OtherExtents::index_type>(
-                    stride(r));
-            }
-            return layout_stride::mapping<OtherExtents>(
-                OtherExtents(extents_), converted);
+            // Let the mapping conversion narrow the strides. An unused stride
+            // can become negative, which the array constructor does not allow.
+            return layout_stride::mapping<OtherExtents>(*this);
         }
 
         constexpr mapping& operator=(const mapping&) noexcept = default;
