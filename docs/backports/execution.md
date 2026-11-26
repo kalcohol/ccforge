@@ -239,12 +239,22 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   receiver environment 均经 FWD-ENV；借用查询的引用身份不变。`continues_on`
   通过它让 source completion domain 定制离开当前 execution resource 的方式。
   `transform_env` 已不在当前 working draft surface，因此本 backport 不暴露该旧拼写。
-- Live draft 已包含 `std::execution::task`、`task_scheduler` 和 `with_error`，但 Forge
-  不 backport 这组 coroutine task。[P3552R3](https://wg21.link/P3552R3) 已进入 working
-  paper，随后 [P4007R3](https://wg21.link/P4007R3) 仍记录
-  task family 的开放问题，并区分其中不能在发布后兼容修正的项目；在 wording、ownership、
-  allocator、stop/error 和 native-handoff 模型形成独立任务书前，`forge::task` 与
-  `forge::io::io_task` 都只是不同契约的 Forge extensions，不能冒充这组标准类型。
+- `std::execution::task`、`task_scheduler` 和 `with_error` 按分阶段试点引入，尚未发布
+  `__cpp_lib_task`。`task_scheduler` 的普通调度（E1）和 `task` 的 frame 所有权与终止
+  交付（F）已实现；frame allocator、promise 环境的 allocator / stop token 查询、start
+  scheduler 的 allocator 分支以及 await 路径的资格验证属于后续批次，逐行状态见
+  [conformance ledger](../roadmap/execution-conformance-ledger.md#f-task-frame-and-terminal-notes)。
+  `forge::task` 与 `forge::io::io_task` 是不同契约的 Forge extensions，与这组标准类型
+  相互独立。标准 `task` 有四条设计约束，它们来自草案本身（[P4007R3](https://wg21.link/P4007R3)
+  §3），不是 Forge 偏差：
+  - coroutine 调用在 receiver 连接之前选定 frame allocator；
+  - receiver 环境的 allocator 可以传到子任务的环境，但每次嵌套的 coroutine 调用各自选定
+    frame allocator；
+  - 成功用 `co_return`，带类型的错误用 `co_yield with_error{e}`，该 yield 之后的代码不执行；
+  - `start` 与完成函数返回 `void`，一般的 sender 组合没有栈深度上界。
+  `co_yield with_error{e}` 的 payload 在 frame 销毁前多移动一次（Forge 记录的选择），因此
+  payload 必须可移动构造；到目标错误类型的转换在 frame 销毁之后进行，转换抛出时走
+  `exception_ptr` 通道，`error_types` 未列出该通道则调用 `terminate`。
 - `connect` 的 awaitable fallback 保存 sender 与 receiver 到全局分配的 coroutine frame，
   operation 的 noexcept move 转移 handle 并清空源对象，析构仅销毁非空 frame，
   `start` 恢复 frame。此连接路径可能抛出分配或参数构造异常，
