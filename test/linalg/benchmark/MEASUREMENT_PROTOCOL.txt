@@ -30,10 +30,12 @@ taskset -c 2 build/linalg-benchmark/run-XXXXXXXX/measure_branch 64 5
 输出字段为 op、type、a_layout、b_layout、n、sample、ns、checksum。
 脚本按 AB/BA 交错轮次保存全部原始 JSONL，保留编译器版本、源码引用、工作区
 相对 HEAD 的完整 tracked diff（含 staged 与 unstaged）、工作区状态、运行参数和
-二进制 SHA256。编译前复制 backport/、include/ 与 test/linalg/benchmark/ 的
-tracked 及非 ignored untracked 输入，保留已删除文件的状态，并记录输入 SHA256。
-两次构建均读取本次目录内的头文件与同一份 benchmark 源码快照；脚本只写入
-build/，不修改仓库源码或 index。归档完整运行目录以保留可重建输入与原始样本。
+二进制 SHA256。编译前归档基线的 backport/，并复制工作树 backport/ 与
+test/linalg/benchmark/ 的 tracked 及非 ignored untracked 输入，保留已删除文件
+的状态，并记录输入 SHA256。两次构建分别使用各自快照中的 backport/ 与工具链的
+标准头文件，均不使用 Forge 扩展的 include/，并读取同一份 benchmark 源码快照。
+脚本只写入 build/，不修改仓库源码或 index。归档完整运行目录以保留可重建输入
+与原始样本。
 
 遵循 test/hive/benchmark/MEASUREMENT_PROTOCOL.txt 的环境记录与比较要求：
 保存日期、非私密主机标识、CPU/核心类型、亲和性、SMT 拓扑、频率策略及观测值、

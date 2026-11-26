@@ -34,7 +34,7 @@ set(wide_flags -mavx2 -mno-avx512f)
 
 function(add_abi_probe target role lanes)
     add_library(${target} OBJECT probe.cpp)
-    target_link_libraries(${target} PRIVATE forge::forge)
+    target_link_libraries(${target} PRIVATE forge::std)
     target_compile_options(${target} PRIVATE ${ARGN})
     target_compile_definitions(${target} PRIVATE
         FORGE_ABI_PROBE=probe_${role}
@@ -53,7 +53,7 @@ add_abi_probe(abi_wide_second second 8 ${wide_flags})
 
 function(add_abi_test target first second first_lanes second_lanes)
     add_executable(${target} main.cpp $<TARGET_OBJECTS:${first}> $<TARGET_OBJECTS:${second}>)
-    target_link_libraries(${target} PRIVATE forge::forge)
+    target_link_libraries(${target} PRIVATE forge::std)
     target_compile_options(${target} PRIVATE ${baseline_flags})
     target_compile_definitions(${target} PRIVATE
         FORGE_ABI_FIRST_LANES=${first_lanes}

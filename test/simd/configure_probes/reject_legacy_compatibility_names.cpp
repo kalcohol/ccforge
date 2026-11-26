@@ -1,4 +1,4 @@
-#include <forge/simd.hpp>
+#include <simd>
 
 #include <complex>
 #include <type_traits>
@@ -131,18 +131,6 @@ using selected = decltype(simd_select_impl(mask4(false), 7, 9));
 using real_vec = std::simd::rebind_t<float, complex4>;
 #else
 using real_vec = complex4::real_type;
-#endif
-#elif defined(FORGE_SIMD_LEGACY_FORGE_FIXED_SIZE_ABI)
-#if defined(FORGE_SIMD_POSITIVE_CONTROL)
-using abi = std::simd::vec<int, 4>::abi_type;
-#else
-using abi = forge::simd_fixed_size_abi<4>;
-#endif
-#elif defined(FORGE_SIMD_LEGACY_FORGE_NATIVE_ABI_TAG)
-#if defined(FORGE_SIMD_POSITIVE_CONTROL)
-using abi = std::simd::vec<int, 4>::abi_type;
-#else
-using abi = forge::simd_native_abi_tag<int, 4>;
 #endif
 #else
 #error Missing legacy SIMD probe selector

@@ -2,6 +2,7 @@
 
 find_package(Threads REQUIRED)
 find_library(FORGE_EXAMPLE_TBB_LIBRARY NAMES tbb)
+include("${CMAKE_CURRENT_LIST_DIR}/../test/TestOwner.cmake")
 
 function(forge_add_example_smoke target_name)
     if(FORGE_BUILD_TESTS)
@@ -15,34 +16,27 @@ function(forge_add_example_smoke target_name)
 endfunction()
 
 function(forge_add_example target_name source_file)
-    if(target_name MATCHES "^forge_")
-        set(_forge_example_links forge::forge)
-    else()
-        set(_forge_example_links forge::std)
+    cmake_parse_arguments(PARSE_ARGV 2 _example "THREADS;SKIP77;TBB" "OWNER" "")
+    if(_example_UNPARSED_ARGUMENTS OR _example_KEYWORDS_MISSING_VALUES)
+        message(FATAL_ERROR "Invalid options for example ${target_name}: ${ARGN}")
     endif()
-    set(_forge_example_skip77 OFF)
-    set(_forge_example_use_tbb OFF)
-
-    foreach(_forge_example_arg IN LISTS ARGN)
-        if(_forge_example_arg STREQUAL "THREADS")
-            list(APPEND _forge_example_links Threads::Threads)
-        elseif(_forge_example_arg STREQUAL "SKIP77")
-            set(_forge_example_skip77 ON)
-        elseif(_forge_example_arg STREQUAL "TBB")
-            set(_forge_example_use_tbb ON)
-        else()
-            message(FATAL_ERROR "Unknown forge_add_example option: ${_forge_example_arg}")
-        endif()
-    endforeach()
+    if(DEFINED _example_OWNER)
+        _forge_test_owner(_forge_example_links OWNER "${_example_OWNER}")
+    else()
+        _forge_test_owner(_forge_example_links)
+    endif()
+    if(_example_THREADS)
+        list(APPEND _forge_example_links Threads::Threads)
+    endif()
 
     add_executable(${target_name} ${source_file})
     target_link_libraries(${target_name} PRIVATE ${_forge_example_links})
 
-    if(_forge_example_use_tbb AND FORGE_EXAMPLE_TBB_LIBRARY)
+    if(_example_TBB AND FORGE_EXAMPLE_TBB_LIBRARY)
         target_link_libraries(${target_name} PRIVATE ${FORGE_EXAMPLE_TBB_LIBRARY})
     endif()
 
-    if(_forge_example_skip77)
+    if(_example_SKIP77)
         set_property(TARGET ${target_name} PROPERTY FORGE_EXAMPLE_SKIP77 ON)
     endif()
 
@@ -101,7 +95,7 @@ forge_add_standard_example(SENDERS execution_coro execution_coro_example.cpp TBB
 include(CheckCXXSourceCompiles)
 unset(FORGE_EXAMPLE_HAS_MDSPAN CACHE)
 unset(FORGE_EXAMPLE_HAS_MDSPAN)
-check_cxx_source_compiles("
+_forge_check_native_cxx_source_compiles("
     #include <mdspan>
     int main() { return 0; }
 " FORGE_EXAMPLE_HAS_MDSPAN)
@@ -116,38 +110,38 @@ if(FORGE_EXAMPLE_HAS_MDSPAN)
 endif()
 
 if(FORGE_ENABLE_EXTENSIONS)
-    forge_add_example(forge_unique_resource_example forge_unique_resource_example.cpp)
+    forge_add_example(forge_unique_resource_example forge_unique_resource_example.cpp OWNER FORGE)
     forge_example_standard_gate(SENDERS _forge_senders_available)
     if(_forge_senders_available)
-        forge_add_example(forge_execution_combinators_example forge_execution_combinators_example.cpp TBB)
+        forge_add_example(forge_execution_combinators_example forge_execution_combinators_example.cpp OWNER FORGE TBB)
     endif()
 
-    forge_add_example(forge_byte_vocabulary forge_byte_vocabulary_example.cpp SKIP77)
-    forge_add_example(forge_memory_stream forge_memory_stream_example.cpp SKIP77)
-    forge_add_example(forge_stream_erasure forge_stream_erasure_example.cpp SKIP77)
-    forge_add_example(forge_owned_async_stream forge_owned_async_stream_example.cpp THREADS TBB SKIP77)
+    forge_add_example(forge_byte_vocabulary forge_byte_vocabulary_example.cpp OWNER FORGE SKIP77)
+    forge_add_example(forge_memory_stream forge_memory_stream_example.cpp OWNER FORGE SKIP77)
+    forge_add_example(forge_stream_erasure forge_stream_erasure_example.cpp OWNER FORGE SKIP77)
+    forge_add_example(forge_owned_async_stream forge_owned_async_stream_example.cpp OWNER FORGE THREADS TBB SKIP77)
     target_sources(
         forge_owned_async_stream
         PRIVATE forge_owned_async_stream_protocol.cc)
-    forge_add_example(forge_line_protocol forge_line_protocol_example.cpp SKIP77)
-    forge_add_example(forge_coro_io forge_coro_io_example.cpp THREADS TBB SKIP77)
-    forge_add_example(forge_coro_interop forge_coro_interop_example.cpp THREADS TBB SKIP77)
-    forge_add_example(forge_coro_combinator forge_coro_combinator_example.cpp THREADS TBB SKIP77)
-    forge_add_example(forge_coro_timeout forge_coro_timeout_example.cpp THREADS TBB SKIP77)
-    forge_add_example(forge_coro_executor_hop forge_coro_executor_hop_example.cpp THREADS TBB SKIP77)
-    forge_add_example(forge_timer_await forge_timer_await_example.cpp THREADS TBB SKIP77)
-    forge_add_example(forge_coro_line_pipeline forge_coro_line_pipeline_example.cpp THREADS TBB SKIP77)
+    forge_add_example(forge_line_protocol forge_line_protocol_example.cpp OWNER FORGE SKIP77)
+    forge_add_example(forge_coro_io forge_coro_io_example.cpp OWNER FORGE THREADS TBB SKIP77)
+    forge_add_example(forge_coro_interop forge_coro_interop_example.cpp OWNER FORGE THREADS TBB SKIP77)
+    forge_add_example(forge_coro_combinator forge_coro_combinator_example.cpp OWNER FORGE THREADS TBB SKIP77)
+    forge_add_example(forge_coro_timeout forge_coro_timeout_example.cpp OWNER FORGE THREADS TBB SKIP77)
+    forge_add_example(forge_coro_executor_hop forge_coro_executor_hop_example.cpp OWNER FORGE THREADS TBB SKIP77)
+    forge_add_example(forge_timer_await forge_timer_await_example.cpp OWNER FORGE THREADS TBB SKIP77)
+    forge_add_example(forge_coro_line_pipeline forge_coro_line_pipeline_example.cpp OWNER FORGE THREADS TBB SKIP77)
 
     if(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND)
-        forge_add_example(forge_context_await forge_context_await_example.cpp THREADS TBB SKIP77)
-        forge_add_example(forge_context_cancel forge_context_cancel_example.cpp THREADS TBB SKIP77)
+        forge_add_example(forge_context_await forge_context_await_example.cpp OWNER FORGE THREADS TBB SKIP77)
+        forge_add_example(forge_context_cancel forge_context_cancel_example.cpp OWNER FORGE THREADS TBB SKIP77)
     endif()
 
     if(FORGE_ENABLE_FORGE_RUNTIME)
         foreach(_forge_example_target IN ITEMS
                 forge_any_sender
                 forge_any_receiver)
-            forge_add_example(${_forge_example_target} ${_forge_example_target}_example.cpp TBB SKIP77)
+            forge_add_example(${_forge_example_target} ${_forge_example_target}_example.cpp OWNER FORGE TBB SKIP77)
         endforeach()
 
         foreach(_forge_example_target IN ITEMS
@@ -163,14 +157,14 @@ if(FORGE_ENABLE_EXTENSIONS)
                 forge_strand
                 forge_graceful_shutdown
                 forge_type_erased_boundary)
-            forge_add_example(${_forge_example_target} ${_forge_example_target}_example.cpp THREADS TBB SKIP77)
+            forge_add_example(${_forge_example_target} ${_forge_example_target}_example.cpp OWNER FORGE THREADS TBB SKIP77)
         endforeach()
 
-        forge_add_example(forge_task forge_task_example.cpp TBB SKIP77)
+        forge_add_example(forge_task forge_task_example.cpp OWNER FORGE TBB SKIP77)
 
         if(FORGE_ENABLE_FORGE_RESOURCE_POLICY)
-            forge_add_example(forge_resource_policy forge_resource_policy_example.cpp THREADS TBB SKIP77)
-            forge_add_example(forge_bounded_pipeline forge_bounded_pipeline_example.cpp THREADS TBB SKIP77)
+            forge_add_example(forge_resource_policy forge_resource_policy_example.cpp OWNER FORGE THREADS TBB SKIP77)
+            forge_add_example(forge_bounded_pipeline forge_bounded_pipeline_example.cpp OWNER FORGE THREADS TBB SKIP77)
         endif()
 
         if(FORGE_HAS_FORGE_IO_LINUX_EPOLL_BACKEND)
@@ -179,16 +173,16 @@ if(FORGE_ENABLE_EXTENSIONS)
                     forge_io_pipeline
                     forge_io_read_write
                     forge_io_typed_error)
-                forge_add_example(${_forge_example_target} ${_forge_example_target}_example.cpp THREADS TBB SKIP77)
+                forge_add_example(${_forge_example_target} ${_forge_example_target}_example.cpp OWNER FORGE THREADS TBB SKIP77)
             endforeach()
         endif()
 
         if(FORGE_HAS_FORGE_IO_WINDOWS_IOCP_BACKEND)
-            forge_add_example(forge_io_iocp forge_io_iocp_example.cpp THREADS TBB SKIP77)
+            forge_add_example(forge_io_iocp forge_io_iocp_example.cpp OWNER FORGE THREADS TBB SKIP77)
         endif()
 
         if(FORGE_HAS_FORGE_IO_URING_BACKEND)
-            forge_add_example(forge_io_uring_read_write forge_io_uring_read_write_example.cpp THREADS TBB SKIP77)
+            forge_add_example(forge_io_uring_read_write forge_io_uring_read_write_example.cpp OWNER FORGE THREADS TBB SKIP77)
         endif()
     endif()
 endif()

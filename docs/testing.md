@@ -435,8 +435,8 @@ Hive 基准运行方法见[测量说明](../test/hive/benchmark/MEASUREMENT_PROT
 
 `FORGE_ENABLE_EXTENSIONS` 在有扩展头文件目录时默认 ON。设为 `OFF` 时不创建
 `forge::forge`，不运行平台 IO probe，也不注册 `forge_` 示例、`test/forge` 或
-`test/unique_resource`。尚依赖完整 target 的混合测试组暂不注册，已独立的 Hive 与
-标准 target 检查仍可运行。
+`test/unique_resource`。包含完整产品集成 fixture 的 native-handoff 组也不注册，
+其余标准测试组仍可运行，测试注册和 configure probe 默认采用 `forge::std`。
 
 `FORGE_TEST_ENABLE_FORGE` 是 `include/forge/` extension tests 的 parent switch。
 更窄的 `FORGE_TEST_ENABLE_FORGE_*` 开关默认仍启用当前测试，同时允许 future

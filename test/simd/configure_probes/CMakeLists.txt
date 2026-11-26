@@ -369,9 +369,7 @@ foreach(_forge_legacy_name IN ITEMS
         SELECT_MASK
         SELECT_BOOL
         SELECT_SCALAR
-        REAL_TYPE
-        FORGE_FIXED_SIZE_ABI
-        FORGE_NATIVE_ABI_TAG)
+        REAL_TYPE)
     set(CMAKE_REQUIRED_DEFINITIONS ${_forge_pair_definitions}
         -DFORGE_SIMD_LEGACY_${_forge_legacy_name}=1)
     forge_add_simd_configure_probe(

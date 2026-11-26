@@ -22,13 +22,13 @@ printf '%s\n' "$base_commit" >> "$out/refs.txt"
 git diff HEAD --binary > "$out/working-tree.patch"
 git status --short > "$out/working-tree-status.txt"
 git ls-files --cached --others --exclude-standard -z -- \
-    backport include test/linalg/benchmark > "$out/input-paths.nul"
+    backport test/linalg/benchmark > "$out/input-paths.nul"
 while IFS= read -r -d '' path; do
     if [[ -f "$path" || -L "$path" ]]; then
         cp --parents -- "$path" "$out/branch/"
     fi
 done < "$out/input-paths.nul"
-git archive "$base_commit" backport include | tar -x -C "$out/base"
+git archive "$base_commit" backport | tar -x -C "$out/base"
 (
     cd "$out"
     find base branch -type f -print0 | sort -z | xargs -0 sha256sum > inputs.sha256
@@ -37,9 +37,9 @@ printf 'CPU=%s\nCXX=%s\nSIZE=%s\nSAMPLES=%s\nROUNDS=%s\n' \
     "$CPU" "$CXX" "$SIZE" "$SAMPLES" "$ROUNDS" > "$out/settings.txt"
 "$CXX" --version > "$out/compiler.txt"
 source_file="$out/branch/test/linalg/benchmark/measure_products.cpp"
-"$CXX" -std=c++23 -O3 -DNDEBUG -ffp-contract=off -I"$out/base/backport" -I"$out/base/include" \
+"$CXX" -std=c++23 -O3 -DNDEBUG -ffp-contract=off -I"$out/base/backport" \
     "$source_file" -o "$out/measure_base"
-"$CXX" -std=c++23 -O3 -DNDEBUG -ffp-contract=off -I"$out/branch/backport" -I"$out/branch/include" \
+"$CXX" -std=c++23 -O3 -DNDEBUG -ffp-contract=off -I"$out/branch/backport" \
     "$source_file" -o "$out/measure_branch"
 sha256sum "$out/measure_base" "$out/measure_branch" > "$out/binaries.sha256"
 # Alternate AB/BA across rounds; retain every raw sample in separate JSONL files.

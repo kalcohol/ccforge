@@ -4,9 +4,6 @@ set(FORGE_SUBMDSPAN_COMPILE_DIR "${FORGE_SUBMDSPAN_TEST_ROOT}/compile")
 
 function(forge_check_submdspan_cxx_source_compiles result_var source_file)
     set(CMAKE_REQUIRED_INCLUDES "")
-    if(MSVC AND NOT CMAKE_REQUIRED_FLAGS MATCHES "(^| )/Zc:__cplusplus($| )")
-        set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /Zc:__cplusplus")
-    endif()
     forge_detect_cxx_source_compiles(${result_var} "${source_file}" ${ARGN})
     set(${result_var} "${${result_var}}" PARENT_SCOPE)
 endfunction()
@@ -35,7 +32,7 @@ endfunction()
 include(CheckCXXSourceCompiles)
 unset(FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER CACHE)
 unset(FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER)
-check_cxx_source_compiles("
+_forge_check_native_cxx_source_compiles("
     #include <mdspan>
     int main() { return 0; }
 " FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER)
@@ -109,7 +106,7 @@ if(FORGE_SUBMDSPAN_HAS_MDSPAN_HEADER)
             add_executable(
                 test_submdspan_${_forge_portable_case}
                 "${FORGE_SUBMDSPAN_RUNTIME_DIR}/test_submdspan_portable.cpp")
-            target_link_libraries(test_submdspan_${_forge_portable_case} PRIVATE forge::forge)
+            target_link_libraries(test_submdspan_${_forge_portable_case} PRIVATE forge::std)
             if(_forge_portable_case STREQUAL "portable_padded")
                 target_compile_definitions(test_submdspan_${_forge_portable_case} PRIVATE
                     FORGE_TEST_SUBMDSPAN_PADDED=1)

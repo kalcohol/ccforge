@@ -9,10 +9,6 @@
 #include <execution>
 #endif
 
-#if __has_include(<forge/linalg.hpp>)
-#error The removed Forge linalg header must not be available.
-#endif
-
 #if (defined(FORGE_LINALG_HAS_EXECUTION_POLICY_OVERLOADS) && \
      FORGE_LINALG_HAS_EXECUTION_POLICY_OVERLOADS) || \
     (!defined(FORGE_BACKPORT_LINALG_HPP_INCLUDED) && \

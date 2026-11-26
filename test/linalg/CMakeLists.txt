@@ -37,7 +37,7 @@ include(CheckCXXSourceCompiles)
 if(FORGE_BASE_MDSPAN_AVAILABLE)
     # Backport activation also requires the mdspan feature macro.
     unset(FORGE_LINALG_HAS_MDSPAN_FEATURE CACHE)
-    check_cxx_source_compiles("
+    _forge_check_native_cxx_source_compiles("
         #include <mdspan>
         #if !defined(__cpp_lib_mdspan)
         #error Forge linalg requires the mdspan feature macro
@@ -80,6 +80,14 @@ if(FORGE_BASE_MDSPAN_AVAILABLE AND FORGE_LINALG_HAS_MDSPAN_FEATURE)
             test_linalg_include
             test_linalg_include.cpp
             linalg_include_compile)
+        if(FORGE_ENABLE_EXTENSIONS)
+            forge_expect_cxx_source_compiles(
+                FORGE_LINALG_LEGACY_HEADER_ABSENT
+                "${FORGE_LINALG_TEST_ROOT}/../forge/compile/test_forge_linalg_header_absent.cpp"
+                ON
+                "The full Forge include surface must not expose the removed Forge linalg header"
+                OWNER FORGE)
+        endif()
         forge_add_linalg_runtime_test(test_linalg_overload_scalars test_linalg_overload_scalars.cpp linalg_overload_scalars)
         if(MSVC)
             target_compile_options(test_linalg_overload_scalars PRIVATE /bigobj)
