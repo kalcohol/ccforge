@@ -47,6 +47,7 @@ forge_add_execution_runtime_test(test_execution_scheduler_env_queries
     test_execution_scheduler_env_queries.cpp execution_scheduler_env_queries)
 forge_add_execution_compile_probe(test_execution_member_dispatch
     test_execution_member_dispatch.cpp execution_member_dispatch_compile)
+
 if(MSVC)
     foreach(_target IN ITEMS test_execution_query_conformance test_execution_query_conformance_runtime
             test_execution_env_queries test_execution_scheduler_env_queries test_execution_member_dispatch)
@@ -322,6 +323,10 @@ forge_add_execution_runtime_test(
     test_execution_test_thread_pool
     test_execution_test_thread_pool.cpp
     execution_test_thread_pool OWNER STD)
+forge_add_execution_runtime_test(
+    test_execution_adversarial_schedulers
+    test_execution_adversarial_schedulers.cpp
+    execution_adversarial_schedulers OWNER STD)
 forge_add_execution_runtime_test(test_execution_stop_token test_execution_stop_token.cpp execution_stop_token)
 forge_add_execution_runtime_test(test_stop_intrusive
     test_execution_stop_intrusive.cpp execution_stop_intrusive)
