@@ -41,9 +41,9 @@
 //                      associate, spawn, spawn_future
 //   Consumers        : sync_wait, sync_wait_with_variant (via this_thread)
 //   Stopped utils    : stopped_as_optional, stopped_as_error, unstoppable
-//   Schedulers       : inline_scheduler, run_loop (mutex+cv)
+//   Schedulers       : inline_scheduler, run_loop (mutex+cv), task_scheduler
 //   Scheduler SPI    : parallel scheduler replacement proxy and backend types
-//                      (no scheduler frontend or replacement query)
+//                      (no parallel scheduler frontend or replacement query)
 //   Stop tokens      : inplace_stop_source/token/callback, never_stop_token,
 //                      stoppable_token concepts
 //   Coroutine bridge : as_awaitable, with_awaitable_senders (C++20 coroutines)
@@ -67,6 +67,8 @@
 //     Use when_all_with_variant for children with multiple signatures.
 //   - The bulk algorithms run serially as permitted by [exec.bulk]/9.
 //     See "bulk" and "bulk_chunked, bulk_unchunked" in the ledger.
+//   - task_scheduler implements ordinary scheduling only. Its domain uses
+//     the serial bulk fallback until stage 2. No task feature macro is defined.
 //
 // DEVIATIONS from current working draft [exec]:
 // Entries below refer to docs/roadmap/execution-conformance-ledger.md.
@@ -146,6 +148,7 @@
 #include "execution/schedule_from.hpp"
 #include "execution/continues_on.hpp"
 #include "execution/affine.hpp"
+#include "execution/task_scheduler.hpp"
 #include "execution/bulk.hpp"
 #include "execution/when_all.hpp"
 #include "execution/awaitable.hpp"
