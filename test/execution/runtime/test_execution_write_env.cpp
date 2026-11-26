@@ -3,9 +3,12 @@
 #include <concepts>
 #include <exception>
 #include <functional>
+#include <cstddef>
+#include <memory>
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -229,12 +232,18 @@ struct tag_reference_env_holder {
     }
 };
 
+struct borrowed_attrs_key : std::forwarding_query_t {};
+struct sender_local_key {};
+
 struct borrowed_sender_attrs {
     std::execution::inline_scheduler scheduler;
 
     borrowed_sender_attrs() = default;
     borrowed_sender_attrs(const borrowed_sender_attrs&) = delete;
     auto operator=(const borrowed_sender_attrs&) -> borrowed_sender_attrs& = delete;
+
+    const borrowed_sender_attrs& query(borrowed_attrs_key) const noexcept { return *this; }
+    int query(sender_local_key) const noexcept { return 42; }
 
     auto query(std::execution::get_completion_scheduler_t<
                    std::execution::set_value_t>) const noexcept {
@@ -262,19 +271,30 @@ struct borrowed_attrs_sender {
     }
 };
 
+template<class Attrs, class Q>
+concept has_sender_attribute = requires(const Attrs& attrs, Q q) { attrs.query(q); };
+
 } // namespace
 
 TEST(WriteEnvTest, PreservesBorrowedNoncopyableSenderAttributes) {
     borrowed_sender_attrs attributes;
-    auto sender = std::execution::write_env(
-        borrowed_attrs_sender{&attributes}, std::execution::env<>{});
-    static_assert(std::same_as<std::execution::env_of_t<decltype(sender)>,
+    const auto child = borrowed_attrs_sender{&attributes};
+    static_assert(std::same_as<std::execution::env_of_t<decltype(child)>,
                                const borrowed_sender_attrs&>);
+    auto sender = std::execution::write_env(child, std::execution::env<>{});
     static_assert(noexcept(std::execution::get_env(sender)));
-    const auto& observed = std::execution::get_env(sender);
-    EXPECT_EQ(&observed, &attributes);
+    auto observed = std::execution::get_env(sender);
+    static_assert(std::copy_constructible<decltype(observed)>);
+    static_assert(!has_sender_attribute<decltype(observed), sender_local_key>);
+    static_assert(std::same_as<decltype(observed.query(borrowed_attrs_key{})),
+                               const borrowed_sender_attrs&>);
+    const auto copy = observed;
+    EXPECT_EQ(&observed.query(borrowed_attrs_key{}), &attributes);
+    EXPECT_EQ(&copy.query(borrowed_attrs_key{}), &attributes);
     EXPECT_EQ(std::execution::get_completion_scheduler<std::execution::set_value_t>(
-                  observed), attributes.scheduler);
+                  std::execution::get_env(child)), attributes.scheduler);
+    EXPECT_EQ(std::execution::get_completion_scheduler<std::execution::set_value_t>(
+                  observed, std::execution::env<>{}), attributes.scheduler);
     auto result = std::this_thread::sync_wait(std::move(sender));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 42);
@@ -614,4 +634,331 @@ TEST(UnstoppableTest, OverridesStopTokenInsideWriteEnv) {
 
     ASSERT_TRUE(result.has_value());
     EXPECT_FALSE(std::get<0>(*result).stop_possible());
+}
+
+namespace {
+
+namespace ex = std::execution;
+using value_tag = ex::set_value_t;
+using error_tag = ex::set_error_t;
+using stopped_tag = ex::set_stopped_t;
+
+template<class Tag, class Attrs, class... Envs>
+concept has_site_scheduler = requires(const Attrs& attrs, const Envs&... envs) {
+    ex::get_completion_scheduler<Tag>(attrs, envs...);
+};
+
+template<class Tag, class Attrs, class... Envs>
+concept has_site_domain = requires(const Attrs& attrs, const Envs&... envs) {
+    ex::get_completion_domain<Tag>(attrs, envs...);
+};
+
+struct overlay_domain {};
+struct base_domain {};
+struct local_scheduler_key {};
+using loop_scheduler = decltype(std::declval<ex::run_loop&>().get_scheduler());
+
+struct local_scheduler_env {
+    loop_scheduler scheduler;
+    auto query(local_scheduler_key) const noexcept { return scheduler; }
+};
+
+struct local_routing_scheduler {
+    using scheduler_concept = ex::scheduler_tag;
+
+    auto schedule() const noexcept { return ex::schedule(ex::inline_scheduler{}); }
+    bool operator==(const local_routing_scheduler&) const noexcept = default;
+
+    auto query(ex::get_forward_progress_guarantee_t) const noexcept {
+        return ex::forward_progress_guarantee::weakly_parallel;
+    }
+
+    template<class Env>
+        requires requires(const Env& e) { e.query(local_scheduler_key{}); }
+    auto query(ex::get_completion_scheduler_t<value_tag>, const Env& e) const noexcept {
+        return e.query(local_scheduler_key{});
+    }
+};
+
+struct local_routing_source {
+    using sender_concept = ex::sender_tag;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> ex::completion_signatures<value_tag()> { return {}; }
+
+    auto get_env() const noexcept {
+        return ex::prop{ex::get_completion_scheduler<value_tag>, local_routing_scheduler{}};
+    }
+};
+
+struct route_to_error : std::forwarding_query_t {};
+
+// Completes with an error when the environment carries the route, and with a
+// value otherwise.
+struct overlay_switch_source {
+    using sender_concept = ex::sender_tag;
+    loop_scheduler value_scheduler;
+    loop_scheduler error_scheduler;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept {
+        if constexpr (requires(const Env& env) { env.query(route_to_error{}); }) {
+            return ex::completion_signatures<error_tag(int)>{};
+        } else {
+            return ex::completion_signatures<value_tag(int)>{};
+        }
+    }
+
+    auto get_env() const noexcept {
+        return ex::env{
+            ex::prop{ex::get_completion_scheduler<value_tag>, value_scheduler},
+            ex::prop{ex::get_completion_scheduler<error_tag>, error_scheduler},
+            ex::prop{ex::get_completion_domain<value_tag>, base_domain{}},
+            ex::prop{ex::get_completion_domain<error_tag>, overlay_domain{}}};
+    }
+
+    template<class R>
+    struct routed_receiver {
+        using receiver_concept = ex::receiver_tag;
+        R outer;
+        bool error;
+
+        void set_value() && noexcept {
+            if (error) {
+                ex::set_error(std::move(outer), 7);
+            } else {
+                ex::set_value(std::move(outer), 7);
+            }
+        }
+        void set_stopped() && noexcept { std::terminate(); }
+        auto get_env() const noexcept -> ex::env<> { return {}; }
+    };
+
+    template<ex::receiver R>
+    auto connect(R r) const {
+        constexpr bool error = requires(const ex::env_of_t<R>& env) { env.query(route_to_error{}); };
+        return ex::connect(ex::schedule(error ? error_scheduler : value_scheduler),
+            routed_receiver<R>{std::move(r), error});
+    }
+};
+
+// Always completes with a value. The environment selects where.
+struct routed_value_source {
+    using sender_concept = ex::sender_tag;
+
+    struct attributes {
+        loop_scheduler plain;
+        loop_scheduler routed;
+
+        template<class Env>
+        auto query(ex::get_completion_scheduler_t<value_tag>, const Env& env) const noexcept {
+            if constexpr (requires { env.query(route_to_error{}); }) {
+                return routed;
+            } else {
+                return plain;
+            }
+        }
+
+        template<class Env>
+        auto query(ex::get_completion_domain_t<value_tag>, const Env& env) const noexcept {
+            if constexpr (requires { env.query(route_to_error{}); }) {
+                return overlay_domain{};
+            } else {
+                return base_domain{};
+            }
+        }
+    };
+
+    attributes attrs;
+
+    template<class Self, class Env>
+    static auto get_completion_signatures() noexcept
+        -> ex::completion_signatures<value_tag(int)> { return {}; }
+    auto get_env() const noexcept { return attrs; }
+};
+
+struct counting_receiver {
+    using receiver_concept = ex::receiver_tag;
+    int* values;
+
+    template<class... Args>
+    void set_value(Args&&...) && noexcept { ++*values; }
+    template<class Error>
+    void set_error(Error&&) && noexcept { std::terminate(); }
+    void set_stopped() && noexcept { std::terminate(); }
+    auto get_env() const noexcept -> ex::env<> { return {}; }
+};
+
+// An allocator-aware overlay: connection rebuilds it with the allocator of
+// the receiver, and the rebuilt overlay names another scheduler.
+struct allocator_overlay {
+    using allocator_type = std::allocator<std::byte>;
+
+    loop_scheduler scheduler;
+    loop_scheduler rebuilt;
+
+    allocator_overlay(loop_scheduler s, loop_scheduler r) noexcept : scheduler(s), rebuilt(r) {}
+    allocator_overlay(const allocator_overlay&) = default;
+    allocator_overlay(std::allocator_arg_t, const allocator_type&,
+                      const allocator_overlay& other) noexcept
+        : scheduler(other.rebuilt), rebuilt(other.rebuilt) {}
+
+    auto query(ex::get_scheduler_t) const noexcept { return scheduler; }
+    overlay_domain query(ex::get_domain_t) const noexcept { return {}; }
+};
+
+struct scheduler_observer {
+    using receiver_concept = ex::receiver_tag;
+    loop_scheduler* observed;
+
+    struct env {
+        auto query(std::get_allocator_t) const noexcept { return std::allocator<std::byte>{}; }
+    };
+
+    void set_value(loop_scheduler scheduler) && noexcept { *observed = scheduler; }
+    template<class Error>
+    void set_error(Error&&) && noexcept { std::terminate(); }
+    void set_stopped() && noexcept { std::terminate(); }
+    auto get_env() const noexcept -> env { return {}; }
+};
+
+} // namespace
+
+TEST(WriteEnvTest, ComputesInlineCompletionAttributesInOverlayFirstOrder) {
+    ex::run_loop outer_loop, overlay_loop;
+    const auto outer = outer_loop.get_scheduler();
+    const auto overlay = overlay_loop.get_scheduler();
+    const auto base = ex::env{ex::prop{ex::get_scheduler, outer},
+                              ex::prop{ex::get_domain, base_domain{}}};
+    const auto child = ex::schedule(ex::inline_scheduler{});
+    const auto sender = ex::write_env(child,
+        ex::env{ex::prop{ex::get_scheduler, overlay},
+                ex::prop{ex::get_domain, overlay_domain{}}});
+    const auto attrs = ex::get_env(sender);
+    static_assert(!has_site_scheduler<value_tag, decltype(attrs)>);
+    static_assert(!has_site_scheduler<error_tag, decltype(attrs), decltype(base)>);
+    static_assert(!has_site_domain<error_tag, decltype(attrs), decltype(base)>);
+    static_assert(std::same_as<decltype(ex::get_completion_domain<value_tag>(attrs, base)),
+        overlay_domain>);
+    EXPECT_EQ(ex::get_completion_scheduler<value_tag>(ex::get_env(child), base), outer);
+    EXPECT_EQ(ex::get_completion_scheduler<value_tag>(attrs, base), overlay);
+}
+
+TEST(WriteEnvTest, OverlayCanChangeTheValueSiteWithoutRemovingValue) {
+    ex::run_loop first, second;
+    const auto a = first.get_scheduler();
+    const auto b = second.get_scheduler();
+    const auto child = routed_value_source{{a, b}};
+    const auto sender = ex::write_env(child, ex::prop{route_to_error{}, true});
+    const auto attrs = ex::get_env(sender);
+
+    // The output tag is the same with and without the overlay; its site and
+    // its domain are the ones that the child reports under the overlay.
+    static_assert(!has_site_scheduler<value_tag, decltype(attrs)>);
+    static_assert(!has_site_domain<value_tag, decltype(attrs)>);
+    static_assert(std::same_as<decltype(ex::get_completion_domain<value_tag>(
+        ex::get_env(child), ex::env<>{})), base_domain>);
+    static_assert(std::same_as<decltype(ex::get_completion_domain<value_tag>(
+        attrs, ex::env<>{})), overlay_domain>);
+    EXPECT_EQ(ex::get_completion_scheduler<value_tag>(ex::get_env(child), ex::env<>{}), a);
+    EXPECT_EQ(ex::get_completion_scheduler<value_tag>(attrs, ex::env<>{}), b);
+    // An outer environment that already routes gives the same answer.
+    EXPECT_EQ(ex::get_completion_scheduler<value_tag>(attrs, ex::prop{route_to_error{}, true}), b);
+}
+
+TEST(WriteEnvTest, OverlayCanMoveAValueToTheRecoveredErrorSite) {
+    ex::run_loop first, second;
+    const auto a = first.get_scheduler();
+    const auto b = second.get_scheduler();
+    const auto child = ex::upon_error(overlay_switch_source{a, b}, [](int n) noexcept { return n; });
+    const auto sender = ex::write_env(child, ex::prop{route_to_error{}, true});
+    const auto attrs = ex::get_env(sender);
+
+    using signature = ex::completion_signatures<value_tag(int)>;
+    static_assert(std::same_as<ex::completion_signatures_of_t<decltype(child), ex::env<>>, signature>);
+    static_assert(std::same_as<ex::completion_signatures_of_t<decltype(sender), ex::env<>>, signature>);
+    // Without the overlay the value of the source passes through.
+    static_assert(std::same_as<decltype(ex::get_completion_domain<value_tag>(
+        ex::get_env(child), ex::env<>{})), base_domain>);
+    EXPECT_EQ(ex::get_completion_scheduler<value_tag>(ex::get_env(child), ex::env<>{}), a);
+    // Under the overlay the value is a recovered error, delivered at the
+    // error site. The unary retry cannot bring the other site back.
+    static_assert(!has_site_scheduler<value_tag, decltype(attrs)>);
+    static_assert(!has_site_domain<value_tag, decltype(attrs)>);
+    static_assert(std::same_as<decltype(ex::get_completion_domain<value_tag>(
+        attrs, ex::env<>{})), overlay_domain>);
+    EXPECT_EQ(ex::get_completion_scheduler<value_tag>(attrs, ex::env<>{}), b);
+
+    int values = 0;
+    auto op = ex::connect(sender, counting_receiver{&values});
+    ex::start(op);
+    first.finish();
+    first.run();
+    EXPECT_EQ(values, 0);
+    second.finish();
+    second.run();
+    EXPECT_EQ(values, 1);
+}
+
+TEST(WriteEnvTest, WithholdsSchedulerOfAnOverlayThatConnectionCanRebuild) {
+    ex::run_loop stored_loop, rebuilt_loop, outer_loop;
+    const auto stored = stored_loop.get_scheduler();
+    const auto rebuilt = rebuilt_loop.get_scheduler();
+    const auto sender = ex::write_env(ex::read_env(ex::get_scheduler),
+        allocator_overlay{stored, rebuilt});
+    const auto inline_sender = ex::write_env(ex::schedule(ex::inline_scheduler{}),
+        allocator_overlay{stored, rebuilt});
+    const auto attrs = ex::get_env(inline_sender);
+
+    // Without an allocator the stored overlay is the connected one.
+    const ex::env<> plain;
+    EXPECT_EQ(ex::get_completion_scheduler<value_tag>(attrs, plain), stored);
+    // A receiver with an allocator makes the operation hold a rebuilt overlay.
+    loop_scheduler seen = outer_loop.get_scheduler();
+    auto op = ex::connect(sender, scheduler_observer{&seen});
+    ex::start(op);
+    EXPECT_EQ(seen, rebuilt);
+
+    const scheduler_observer::env allocating;
+    static_assert(!has_site_scheduler<value_tag, decltype(attrs), scheduler_observer::env>);
+    static_assert(std::same_as<decltype(ex::get_completion_domain<value_tag>(attrs, allocating)),
+        overlay_domain>);
+    // An overlay that is not allocator-aware keeps its scheduler.
+    // The attributes point at the overlay that the sender owns.
+    const auto fixed_sender = ex::write_env(ex::schedule(ex::inline_scheduler{}),
+        ex::prop{ex::get_scheduler, stored});
+    const auto fixed = ex::get_env(fixed_sender);
+    EXPECT_EQ(ex::get_completion_scheduler<value_tag>(fixed, allocating), stored);
+}
+
+TEST(WriteEnvTest, WithholdsSchedulerThatOuterRecursionWouldReroute) {
+    ex::run_loop loop;
+    const auto base = local_scheduler_env{loop.get_scheduler()};
+    const auto child = local_routing_source{};
+    const auto sender = ex::write_env(child, ex::env<>{});
+    const auto attrs = ex::get_env(sender);
+
+    EXPECT_EQ(ex::get_completion_scheduler<value_tag>(ex::get_env(child), base), base.scheduler);
+    static_assert(!has_site_scheduler<value_tag, decltype(attrs), decltype(base)>);
+    EXPECT_EQ(ex::get_completion_scheduler<value_tag>(attrs, ex::env<>{}), local_routing_scheduler{});
+    static_assert(!has_site_domain<value_tag, decltype(attrs), decltype(base)>);
+}
+
+TEST(WriteEnvTest, UnstoppableRemovesAChildStoppedSite) {
+    ex::run_loop loop;
+    const auto scheduler = loop.get_scheduler();
+    const auto child = ex::schedule(scheduler);
+    const auto base = ex::prop{std::get_stop_token, std::inplace_stop_token{}};
+    const auto passthrough = ex::write_env(child, ex::env<>{});
+    const auto pass_attrs = ex::get_env(passthrough);
+    const auto wrapped = ex::unstoppable(child);
+    const auto attrs = ex::get_env(wrapped);
+
+    static_assert(!has_site_scheduler<stopped_tag, decltype(attrs)>);
+    static_assert(!has_site_scheduler<stopped_tag, decltype(attrs), decltype(base)>);
+    static_assert(!has_site_domain<stopped_tag, decltype(attrs), decltype(base)>);
+    static_assert(has_site_domain<stopped_tag, decltype(pass_attrs), decltype(base)>);
+    EXPECT_EQ(ex::get_completion_scheduler<stopped_tag>(pass_attrs, base), scheduler);
+    EXPECT_EQ(ex::get_completion_scheduler<value_tag>(attrs, base), scheduler);
 }

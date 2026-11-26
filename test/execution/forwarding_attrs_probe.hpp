@@ -72,7 +72,10 @@ inline constexpr actual_query<false> actual_nonforwarding{0};
 
 struct argument { int value = 3; };
 struct actual_query_failure {};
-struct receiver_env {};
+struct domain_context : std::forwarding_query_t {};
+struct receiver_env {
+    void query(domain_context) const noexcept {}
+};
 struct member_domain {};
 struct tag_domain {};
 struct domain_failure {};
@@ -126,7 +129,12 @@ struct attributes {
         ++state->raw_domain_calls;
         throw domain_failure{};
     }
-    tag_domain query(ex::get_completion_domain_t<ex::set_value_t>, const receiver_env&) const noexcept {
+    // The adaptors query their child with a view of the receiver environment,
+    // and need the domain of every completion that can become the output.
+    template<class Tag, class Env>
+        requires (!std::same_as<Tag, void>) &&
+                 requires(const Env& env) { env.query(domain_context{}); }
+    tag_domain query(ex::get_completion_domain_t<Tag>, const Env&) const noexcept {
         ++state->raw_domain_calls;
         return {};
     }

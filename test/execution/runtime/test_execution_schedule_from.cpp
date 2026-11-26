@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "observe_completion.hpp"
+#include "test_thread_pool.hpp"
 
 #include <execution>
 
@@ -307,4 +308,37 @@ TEST(ScheduleFromTest, ContinuesOnExposesDepartureMarkerToSourceDomain) {
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 99);
     EXPECT_TRUE(departure_domain::transformed);
+}
+
+namespace {
+
+template<class Tag, class Attrs, class... Envs>
+concept has_departure_scheduler = requires(const Attrs& attrs, const Envs&... envs) {
+    std::execution::get_completion_scheduler<Tag>(attrs, envs...);
+};
+
+template<class Tag, class Attrs, class... Envs>
+concept has_departure_domain = requires(const Attrs& attrs, const Envs&... envs) {
+    std::execution::get_completion_domain<Tag>(attrs, envs...);
+};
+
+} // namespace
+
+TEST(ScheduleFromTest, PreservesPoolDeliverySitesButNotImpossibleError) {
+    namespace ex = std::execution;
+    test_execution::test_thread_pool pool(1);
+    const auto scheduler = pool.get_scheduler();
+    const auto child = ex::schedule(scheduler);
+    const auto sender = ex::schedule_from(child);
+    const auto attrs = ex::get_env(sender);
+    static_assert(!has_departure_scheduler<ex::set_error_t, decltype(attrs)>);
+    static_assert(!has_departure_scheduler<ex::set_error_t, decltype(attrs), ex::env<>>);
+    static_assert(!has_departure_domain<ex::set_error_t, decltype(attrs), ex::env<>>);
+    static_assert(std::same_as<decltype(ex::get_completion_domain<ex::set_stopped_t>(
+        attrs, ex::env<>{})), ex::default_domain>);
+    EXPECT_EQ(ex::get_completion_scheduler<ex::set_value_t>(attrs, ex::env<>{}), scheduler);
+    static_assert(!has_departure_scheduler<ex::set_stopped_t, decltype(attrs)>);
+    EXPECT_EQ(ex::get_completion_scheduler<ex::set_stopped_t>(attrs, ex::env<>{}),
+        ex::get_completion_scheduler<ex::set_stopped_t>(ex::get_env(child)));
+    EXPECT_NE(ex::get_completion_scheduler<ex::set_stopped_t>(attrs, ex::env<>{}), scheduler);
 }

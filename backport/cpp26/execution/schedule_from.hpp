@@ -24,7 +24,7 @@
 
 #include "concepts.hpp"
 #include "detail.hpp"
-#include "detail/adaptor.hpp"
+#include "detail/completion_attrs.hpp"
 
 #include <cstddef>
 #include <tuple>
@@ -81,8 +81,13 @@ struct __sender {
         return {};
     }
 
-    auto get_env() const noexcept -> __forge_env_detail::__fwd_attrs_view<env_of_t<S>> {
-        return __forge_env_detail::__fwd_attrs_view<env_of_t<S>>::__of(__sndr_);
+    using __channel_node = __forge_detail::__channel_node_t<
+        __sender<S>,
+        S, __forge_detail::__identity_channels, __forge_detail::__forwarded_child_env, true>;
+    using __attrs_t = __forge_detail::__completion_attrs<__channel_node>;
+
+    auto get_env() const noexcept -> __attrs_t {
+        return __attrs_t::__of(__sndr_);
     }
 
     template<class Child, class R>

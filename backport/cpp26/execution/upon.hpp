@@ -24,7 +24,7 @@
 
 #include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
-#include "detail/adaptor.hpp"
+#include "detail/completion_attrs.hpp"
 #include "env.hpp"
 
 #include <exception>
@@ -116,6 +116,21 @@ struct __completion_sigs<Fn, IsError, completion_signatures<Sigs...>> {
     using type = __forge_meta::__concat_unique_cs_t<
         typename __transform_sig<Fn, Sigs, IsError>::type...,
         typename __maybe_eptr_cs<handler_may_throw>::type>;
+};
+
+// The handler consumes its channel and yields a value. If it throws, the
+// error is delivered where the consumed completion arrived.
+template<bool IsError>
+struct __channels {
+    static constexpr unsigned __consumed =
+        IsError ? __forge_detail::__error_bit : __forge_detail::__stopped_bit;
+    static constexpr __forge_detail::__channel_edges __edges{
+        {__forge_detail::__value_bit | __consumed,
+         IsError ? 0u : __forge_detail::__error_bit,
+         IsError ? __forge_detail::__stopped_bit : 0u},
+        {__forge_detail::__value_bit | __consumed,
+         __forge_detail::__error_bit | __consumed,
+         IsError ? __forge_detail::__stopped_bit : 0u}};
 };
 
 template<class R, class Fn>
@@ -288,8 +303,13 @@ struct __sender {
     // An invalid rvalue child connection must not retry the const-lvalue path.
     template<class R> void connect(R) && = delete;
 
+    using __channel_node = __forge_detail::__channel_node_t<
+        __sender,
+        S, __channels<IsError>, __forge_detail::__forwarded_child_env, true, Fn>;
+    using __attrs_t = __forge_detail::__completion_attrs<__channel_node>;
+
     auto get_env() const noexcept {
-        return __forge_env_detail::__fwd_attrs_view<env_of_t<S>>::__of(__sndr);
+        return __attrs_t::__of(__sndr);
     }
 };
 

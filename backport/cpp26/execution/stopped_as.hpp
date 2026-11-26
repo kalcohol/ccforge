@@ -25,7 +25,7 @@
 #include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
 #include "env.hpp"
-#include "detail/adaptor.hpp"
+#include "detail/completion_attrs.hpp"
 #include "just.hpp"
 #include "let.hpp"
 
@@ -165,6 +165,25 @@ struct __optional_cs<completion_signatures<Sigs...>> {
         eptr_cs>;
 };
 
+// Stopped becomes an empty optional value. Forming a populated optional can
+// throw at the value site.
+struct __optional_channels {
+    static constexpr __forge_detail::__channel_edges __edges{
+        {__forge_detail::__value_bit | __forge_detail::__stopped_bit,
+         __forge_detail::__error_bit, 0u},
+        {__forge_detail::__value_bit | __forge_detail::__stopped_bit,
+         __forge_detail::__error_bit | __forge_detail::__value_bit, 0u}};
+};
+
+// Stopped becomes the stored error, which is delivered by reference.
+struct __error_channels {
+    static constexpr __forge_detail::__channel_edges __edges{
+        {__forge_detail::__value_bit,
+         __forge_detail::__error_bit | __forge_detail::__stopped_bit, 0u},
+        {__forge_detail::__value_bit,
+         __forge_detail::__error_bit | __forge_detail::__stopped_bit, 0u}};
+};
+
 template<class Err, bool SendsStopped>
 struct __error_stopped_sig {
     using type = completion_signatures<>;
@@ -298,8 +317,14 @@ struct __optional_sender {
         return {};
     }
 
+    // Both connections hand the child over as an rvalue.
+    using __channel_node = __forge_detail::__channel_node_t<
+        __optional_sender<S>,
+        S, __optional_channels, __forge_detail::__forwarded_child_env, false>;
+    using __attrs_t = __forge_detail::__completion_attrs<__channel_node>;
+
     auto get_env() const noexcept {
-        return __forge_env_detail::__fwd_attrs_view<env_of_t<S>>::__of(__sndr);
+        return __attrs_t::__of(__sndr);
     }
 };
 
@@ -383,8 +408,15 @@ struct __error_sender {
     template<class Self, class Env>
     static constexpr auto get_completion_signatures() noexcept -> __cs<Env> { return {}; }
 
+    // Both connections hand the child over as an rvalue, and the receiver
+    // returns the outer environment itself.
+    using __channel_node = __forge_detail::__channel_node_t<
+        __error_sender<S, Err>,
+        S, __error_channels, __forge_detail::__direct_child_env, false, Err>;
+    using __attrs_t = __forge_detail::__completion_attrs<__channel_node>;
+
     auto get_env() const noexcept {
-        return __forge_env_detail::__fwd_attrs_view<env_of_t<S>>::__of(__sndr);
+        return __attrs_t::__of(__sndr);
     }
 };
 

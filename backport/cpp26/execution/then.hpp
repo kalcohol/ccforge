@@ -24,7 +24,7 @@
 
 #include "sender_adaptor_closure.hpp"
 #include "concepts.hpp"
-#include "detail/adaptor.hpp"
+#include "detail/completion_attrs.hpp"
 
 #include <exception>
 #include <memory>
@@ -267,8 +267,13 @@ struct then_sender {
     // An invalid rvalue child connection must not retry the const-lvalue path.
     template<class R> void connect(R) && = delete;
 
+    using __channel_node = __forge_detail::__channel_node_t<
+        then_sender<S, Fn>,
+        S, __forge_detail::__value_map_channels, __forge_detail::__forwarded_child_env, true, Fn>;
+    using __attrs_t = __forge_detail::__completion_attrs<__channel_node>;
+
     auto get_env() const noexcept {
-        return __forge_env_detail::__fwd_attrs_view<env_of_t<S>>::__of(sndr_);
+        return __attrs_t::__of(sndr_);
     }
 };
 

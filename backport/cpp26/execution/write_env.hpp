@@ -24,7 +24,7 @@
 
 #include "concepts.hpp"
 #include "env.hpp"
-#include "detail/adaptor.hpp"
+#include "detail/completion_attrs.hpp"
 
 #include <concepts>
 #include <type_traits>
@@ -82,6 +82,33 @@ struct __joined_view {
 template<class OverrideEnv, class BaseEnv>
 using __joined_env = __joined_view<
     OverrideEnv, __forge_env_detail::__normalized_env_t<BaseEnv>>;
+
+// The environment in which the attributes examine the child: the overlay
+// stored in the sender first, then FWD-ENV of the supplied environment.
+template<class OverrideEnv>
+struct __attrs_child_env {
+    const OverrideEnv* __overlay;
+
+    template<class Env>
+    using __env_t = __joined_env<OverrideEnv, Env>;
+
+    // Connection rebuilds the overlay with the receiver's allocator. An
+    // allocator-aware overlay can then answer with another scheduler.
+    template<class Env>
+    static consteval bool __stable_scheduler() {
+        if constexpr (requires { std::get_allocator(std::declval<Env>()); }) {
+            return !std::uses_allocator_v<OverrideEnv, std::remove_cvref_t<decltype(
+                std::get_allocator(std::declval<Env>()))>>;
+        } else {
+            return true;
+        }
+    }
+
+    template<class Env>
+    constexpr auto __view(Env&& env) const noexcept -> __joined_env<OverrideEnv, Env> {
+        return {__overlay, __forge_env_detail::__fwd_env_view<Env>::__borrow(env)};
+    }
+};
 
 template<class OverrideEnv, class R>
 struct __recv {
@@ -182,8 +209,14 @@ struct __sender {
     // An invalid rvalue child connection must not retry the const-lvalue path.
     template<class R> void connect(R) && = delete;
 
-    decltype(auto) get_env() const noexcept {
-        return std::execution::get_env(__sndr);
+    using __channel_node = __forge_detail::__channel_node_t<
+        __sender<S, OverrideEnv>,
+        S, __forge_detail::__identity_channels, __attrs_child_env<OverrideEnv>,
+        true, OverrideEnv>;
+    using __attrs_t = __forge_detail::__completion_attrs<__channel_node>;
+
+    auto get_env() const noexcept {
+        return __attrs_t::__of(__sndr, {std::addressof(__env)});
     }
 };
 
