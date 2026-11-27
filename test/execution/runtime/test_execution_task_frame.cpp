@@ -1657,10 +1657,7 @@ struct ranked_scheduler {
 // comparison must therefore stay viable and report it as a different
 // concrete type, as the draft's declaration does.
 struct volatile_scheduler : ex::task_scheduler {
-    // Its own constructor, not the inherited constructor template: checking
-    // scheduler for a class that inherits that template asks the template's
-    // own scheduler constraint about the class again, which GCC rejects.
-    explicit volatile_scheduler(ex::inline_scheduler wrapped) : ex::task_scheduler(wrapped) {}
+    using ex::task_scheduler::task_scheduler;
 
     auto schedule() const volatile noexcept { return ex::schedule(ex::inline_scheduler{}); }
     auto query(ex::get_forward_progress_guarantee_t) const volatile noexcept {

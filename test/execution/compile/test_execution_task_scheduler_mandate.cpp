@@ -61,6 +61,17 @@ static_assert(!std::is_default_constructible_v<ex::task_scheduler>);
 static_assert(!std::is_constructible_v<ex::task_scheduler, int>);
 static_assert(!std::is_constructible_v<ex::task_scheduler, ex::task_scheduler, std::allocator<int>>);
 
+struct inherited_scheduler : ex::task_scheduler {
+    using ex::task_scheduler::task_scheduler;
+};
+
+// GCC 16 checked the inherited constructor's scheduler constraint while
+// checking the derived scheduler's own copyability.
+static_assert(ex::scheduler<inherited_scheduler>);
+static_assert(ex::scheduler<inherited_scheduler&>);
+static_assert(std::is_constructible_v<ex::task_scheduler, inherited_scheduler&>);
+static_assert(std::is_constructible_v<ex::task_scheduler, inherited_scheduler&, std::allocator<int>>);
+
 int main() {
     // A type-trait alone does not instantiate the constructor's mandate.
     [[maybe_unused]] ex::task_scheduler erased{selected_scheduler{}};

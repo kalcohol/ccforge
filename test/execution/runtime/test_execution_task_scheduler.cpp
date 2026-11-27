@@ -483,6 +483,80 @@ TEST(ExecutionTaskScheduler, E02_E04_ConcreteEqualityProgressAndAttributes) {
                                    ex::get_env(ex::schedule(a)), context)), domain>);
 }
 
+TEST(ExecutionTaskScheduler, TS07_ComparesWithAffineCompletionScheduler) {
+    struct affine_start_env {
+        ex::task_scheduler scheduler;
+
+        ex::task_scheduler query(ex::get_start_scheduler_t) const noexcept { return scheduler; }
+    };
+    trace events;
+    const ex::task_scheduler first{traced_scheduler<16>{events, 1}};
+    const ex::task_scheduler second{traced_scheduler<16>{events, 2}};
+    const auto completion_scheduler = [](const ex::task_scheduler& start_scheduler) {
+        const affine_start_env start_env{start_scheduler};
+        // In this backport affine lowers at connect. Inspect that same
+        // lowering here without naming or constructing its wrapper type.
+        const auto lowered = ex::__forge_affine::__lower(ex::just(), start_env);
+        return ex::get_env(lowered).query(ex::get_completion_scheduler<ex::set_value_t>, start_env);
+    };
+    auto wrapper = completion_scheduler(first);
+    const auto other = completion_scheduler(second);
+    static_assert(ex::scheduler<decltype(wrapper)>);
+    const ex::task_scheduler erased{wrapper};
+
+    EXPECT_TRUE(erased == wrapper);
+    EXPECT_TRUE(wrapper == erased);
+    EXPECT_FALSE(erased == other);
+    EXPECT_FALSE(other == erased);
+    EXPECT_FALSE(first == wrapper);
+    EXPECT_FALSE(wrapper == first);
+}
+
+TEST(ExecutionTaskScheduler, TS07_DerivedSchedulerErasesWithOrWithoutAnAllocator) {
+    static int derived_progress_calls = 0;
+    struct inherited_scheduler : ex::task_scheduler {
+        using ex::task_scheduler::task_scheduler;
+        // Keep the inherited scheduler queries (completion scheduler and
+        // domain) visible next to the counting progress override.
+        using ex::task_scheduler::query;
+
+        auto query(ex::get_forward_progress_guarantee_t) const noexcept {
+            ++derived_progress_calls;
+            // The base's own member: the progress CPO needs a scheduler
+            // expression, and a const eraser cannot be scheduled.
+            return ex::task_scheduler::query(ex::get_forward_progress_guarantee_t{});
+        }
+    };
+    inherited_scheduler source{ex::inline_scheduler{}};
+    ex::task_scheduler sliced{static_cast<const ex::task_scheduler&>(source)};
+    ex::task_scheduler erased{source};
+    ex::task_scheduler erased_with_allocator{source, {}};
+
+    derived_progress_calls = 0;
+    EXPECT_EQ(ex::get_forward_progress_guarantee(sliced), ex::forward_progress_guarantee::weakly_parallel);
+    EXPECT_EQ(derived_progress_calls, 0);
+    EXPECT_EQ(ex::get_forward_progress_guarantee(erased), ex::forward_progress_guarantee::weakly_parallel);
+    EXPECT_EQ(derived_progress_calls, 1);
+    EXPECT_EQ(ex::get_forward_progress_guarantee(erased_with_allocator),
+              ex::forward_progress_guarantee::weakly_parallel);
+    EXPECT_EQ(derived_progress_calls, 2);
+    EXPECT_TRUE(sliced == source);
+    EXPECT_FALSE(erased == source);
+    EXPECT_FALSE(erased_with_allocator == source);
+    EXPECT_TRUE(erased == erased_with_allocator);
+
+    // Copying or moving the derived type itself is not an erasure: the
+    // inherited constructor template is excluded there ([over.match.funcs]),
+    // so the copy still wraps the inline scheduler and adds no progress call.
+    inherited_scheduler copy{source};
+    inherited_scheduler moved{std::move(copy)};
+    EXPECT_TRUE(static_cast<const ex::task_scheduler&>(moved) == ex::inline_scheduler{});
+    EXPECT_TRUE(static_cast<const ex::task_scheduler&>(moved) == static_cast<const ex::task_scheduler&>(source));
+    derived_progress_calls = 0;
+    EXPECT_EQ(ex::get_forward_progress_guarantee(moved), ex::forward_progress_guarantee::weakly_parallel);
+    EXPECT_EQ(derived_progress_calls, 1);
+}
+
 TEST(ExecutionTaskScheduler, E03_InlineBackendDoesNotAllocate) {
     // Use the const-lvalue construction path so earlier tests that erase an
     // inline_scheduler prvalue do not warm this singleton.

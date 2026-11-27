@@ -325,21 +325,12 @@ class task_scheduler;
 namespace __forge_task_scheduler {
 
 template<class Sch>
-inline constexpr bool __wraps_task_scheduler = false;
+concept __binds_eraser_base =
+    std::is_convertible_v<std::remove_reference_t<Sch>*, const task_scheduler*>;
 
-template<>
-inline constexpr bool __wraps_task_scheduler<
-    __forge_affine::__unstoppable_scheduler<task_scheduler>> = true;
-
-// True for task_scheduler itself, as the draft's !same_as, and for the types
-// whose scheduler check would find the mixed comparison below. A derived
-// eraser is discarded only when the eraser-to-eraser comparison can bind it:
-// a volatile-qualified one stays a concrete operand, as in the draft. The
-// scheduler check compares the cv-unqualified type, so it does not re-enter.
 template<class Sch>
-concept __reenters_scheduler_check =
-    (std::derived_from<Sch, task_scheduler> && !std::is_volatile_v<Sch>) ||
-    __wraps_task_scheduler<Sch>;
+concept __known_scheduler =
+    std::same_as<Sch, __forge_affine::__unstoppable_scheduler<task_scheduler>>;
 
 } // namespace __forge_task_scheduler
 
@@ -353,13 +344,22 @@ class task_scheduler {
 public:
     using scheduler_concept = scheduler_tag;
 
+    // Checking a derived eraser's copyability can consider this inherited
+    // template. Defer its scheduler check to the body without removing the
+    // erasing overload. [over.match.funcs] excludes the inherited template
+    // when copying the derived type itself.
     template<class Sch, class Allocator = std::allocator<void>>
-        requires (!std::same_as<task_scheduler, std::remove_cvref_t<Sch>>) && scheduler<Sch>
+        requires (!std::same_as<task_scheduler, std::remove_cvref_t<Sch>>) &&
+                 (std::derived_from<std::remove_cvref_t<Sch>, task_scheduler> || scheduler<Sch>)
     explicit task_scheduler(Sch&& __scheduler, Allocator __alloc = {}) {
-        constexpr bool __infallible = __forge_affine::__infallible_scheduler<Sch, env<>>;
-        static_assert(__infallible, "task_scheduler requires an infallible scheduler in env<>");
-        if constexpr (__infallible) {
-            __backend_ = __forge_task_scheduler::__make_backend(std::forward<Sch>(__scheduler), __alloc);
+        if constexpr (!scheduler<Sch>) {
+            static_assert(scheduler<Sch>, "task_scheduler requires a scheduler");
+        } else {
+            constexpr bool __infallible = __forge_affine::__infallible_scheduler<Sch, env<>>;
+            static_assert(__infallible, "task_scheduler requires an infallible scheduler in env<>");
+            if constexpr (__infallible) {
+                __backend_ = __forge_task_scheduler::__make_backend(std::forward<Sch>(__scheduler), __alloc);
+            }
         }
     }
 
@@ -380,15 +380,16 @@ public:
                __lhs.__backend_->__equals(__rhs.__backend_->__scheduler_address());
     }
 
-    // Declared as in the draft, with one guard ahead of scheduler<Sch>.
+    // Keep the draft's fixed left parameter for overload ranking.
     // Checking scheduler<X> looks up X == X. If task_scheduler is an
     // associated class of X, that lookup finds this operator with Sch = X and
     // asks scheduler<X> again while it is being decided, which GCC rejects.
-    // Two kinds of X occur: affine's wrapper around a task_scheduler and a
-    // class derived from task_scheduler. The guard discards both first.
-    // A volatile-qualified derived class remains a concrete right operand.
+    // Let affine's exact wrapper participate without checking it again.
+    // A derived eraser stays a concrete right operand only if it cannot
+    // bind to the eraser-to-eraser overload, as when volatile-qualified.
     template<class Sch>
-        requires (!__forge_task_scheduler::__reenters_scheduler_check<Sch>) && scheduler<Sch>
+        requires __forge_task_scheduler::__known_scheduler<Sch> ||
+                 ((!__forge_task_scheduler::__binds_eraser_base<Sch>) && scheduler<Sch>)
     friend bool operator==(const task_scheduler& __lhs, const Sch& __rhs) noexcept {
         if constexpr (std::is_volatile_v<Sch>) {
             return false; // The stored concrete type is always cv-unqualified.
