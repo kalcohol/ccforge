@@ -13,6 +13,11 @@ option(FORGE_TEST_ENABLE_FORGE_RESOURCE "Build Forge resource policy extension t
 option(FORGE_TEST_ENABLE_FORGE_IO "Build Forge IO extension tests when available" ON)
 option(FORGE_TEST_ENABLE_FORGE_ERASURE "Build Forge erasure extension tests" ON)
 option(FORGE_TEST_ENABLE_NATIVE_HANDOFF "Build Forge native handoff tests" ON)
+# Lane assertions for the native execution policy modes (NativePolicyTests.cmake).
+option(FORGE_TEST_REQUIRE_NATIVE_POLICIES
+    "Require all four native execution policy objects in the default mode" OFF)
+option(FORGE_TEST_REQUIRE_LIBCPP_EXPERIMENTAL_POLICIES
+    "Require the libc++ -fexperimental-library execution policy test variants" OFF)
 
 set(FORGE_TEST_ENABLE_ANY_FORGE OFF)
 if(FORGE_ENABLE_EXTENSIONS AND FORGE_TEST_ENABLE_FORGE
@@ -212,18 +217,32 @@ function(forge_expect_cxx_source_compiles result_var source_file should_compile 
     endif()
 endfunction()
 
+set(FORGE_TEST_GTEST_CASES_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/RunGoogleTestCases.cmake")
+
 function(forge_add_runtime_test target_name source_file)
     _forge_test_registration(test_name owner_target "${target_name}" ${ARGN})
 
     add_executable(${target_name} ${source_file})
     target_link_libraries(${target_name} PRIVATE gtest_main ${owner_target})
-    add_test(NAME ${test_name} COMMAND ${target_name})
+    if(FORGE_TEST_REQUIRE_GTEST_CASES)
+        # Set by the caller for a CTest that qualifies a configuration.
+        add_test(NAME ${test_name} COMMAND ${CMAKE_COMMAND}
+            -DTEST_BINARY=$<TARGET_FILE:${target_name}>
+            -P "${FORGE_TEST_GTEST_CASES_SCRIPT}")
+    else()
+        add_test(NAME ${test_name} COMMAND ${target_name})
+    endif()
     set_tests_properties(${test_name} PROPERTIES TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
 endfunction()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/CompileProbe.cmake")
 
 find_library(FORGE_TEST_TBB_LIBRARY NAMES tbb)
+
+if(FORGE_TEST_ENABLE_EXECUTION OR FORGE_TEST_ENABLE_LINALG OR FORGE_TEST_ENABLE_ANY_FORGE
+        OR FORGE_TEST_REQUIRE_NATIVE_POLICIES OR FORGE_TEST_REQUIRE_LIBCPP_EXPERIMENTAL_POLICIES)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/NativePolicyTests.cmake")
+endif()
 
 if(FORGE_TEST_ENABLE_EXECUTION)
     if(FORGE_FORCE_SENDERS_BACKPORT
@@ -285,4 +304,36 @@ if(FORGE_TEST_ENABLE_ANY_FORGE OR (FORGE_ENABLE_EXTENSIONS AND FORGE_TEST_ENABLE
 endif()
 if(FORGE_ENABLE_EXTENSIONS AND FORGE_TEST_ENABLE_NATIVE_HANDOFF)
     add_subdirectory(native_handoff)
+endif()
+
+if(FORGE_TEST_EXPERIMENTAL_POLICIES)
+    # Wherever the flagged mode is enabled, each group that applies must have
+    # registered its variants with the flag (NativePolicyTests.cmake).
+    set(_execution_injected OFF)
+    if(FORGE_FORCE_SENDERS_BACKPORT OR (NOT FORGE_SENDERS_FULL AND NOT FORGE_SENDERS_PARTIAL))
+        set(_execution_injected ON)
+    endif()
+    if(FORGE_TEST_ENABLE_EXECUTION AND _execution_injected)
+        forge_require_experimental_policy_tests("${CMAKE_CURRENT_SOURCE_DIR}/execution"
+            execution_bulk_native_policy_experimental
+            execution_bulk_policy_constraints_experimental_compile)
+    endif()
+    if(FORGE_TEST_ENABLE_ANY_FORGE AND FORGE_TEST_ENABLE_FORGE_RUNTIME AND _execution_injected)
+        forge_require_experimental_policy_tests("${CMAKE_CURRENT_SOURCE_DIR}/forge"
+            forge_serial_bulk_experimental)
+    endif()
+    if(FORGE_TEST_ENABLE_LINALG AND FORGE_BASE_MDSPAN_AVAILABLE AND FORGE_LINALG_HAS_MDSPAN_FEATURE
+            AND (FORGE_FORCE_LINALG_BACKPORT OR (NOT FORGE_LINALG_FULL AND NOT FORGE_LINALG_PARTIAL)))
+        forge_require_experimental_policy_tests("${CMAKE_CURRENT_SOURCE_DIR}/linalg"
+            linalg_execution_policy_experimental
+            linalg_policy_selection_experimental_compile
+            linalg_policy_include_order_experimental_compile
+            linalg_policy_include_order_experimental)
+        if(NOT FORGE_TEST_DEFAULT_POLICY_OBJECTS)
+            # The existing draft-surface target moves to the flagged mode.
+            forge_require_experimental_policy_tests("${CMAKE_CURRENT_SOURCE_DIR}/linalg"
+                linalg_draft_surface_compile)
+        endif()
+    endif()
+    unset(_execution_injected)
 endif()

@@ -187,7 +187,8 @@ for std in 23 26; do
     if cmake -S "${root}/src" -B "${build}" -G "${generator}" \
         -DCMAKE_CXX_COMPILER="$(xcrun --find clang++)" \
         -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD="${std}" \
-        -DFORGE_BUILD_TESTS=ON -DFORGE_BUILD_EXAMPLES=ON; then
+        -DFORGE_BUILD_TESTS=ON -DFORGE_BUILD_EXAMPLES=ON \
+        -DFORGE_TEST_REQUIRE_LIBCPP_EXPERIMENTAL_POLICIES=ON; then
         printf '[macos] build C++%s\n' "${std}"
         if cmake --build "${build}"; then
             printf '[macos] test C++%s\n' "${std}"

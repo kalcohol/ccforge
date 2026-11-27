@@ -187,15 +187,13 @@ void check_const_shape(Cpo cpo) {
     static_assert(std::same_as<decltype(bound.__shape_), const int>);
 }
 
-#if FORGE_TEST_BULK_HAS_NATIVE_POLICIES
+#if FORGE_NATIVE_EXECUTION_POLICY_OBJECTS
 template<class Cpo, class Function>
-constexpr bool has_policy_forms =
-    std::invocable<Cpo, source, decltype(ex::seq), int, Function> &&
-    pipeable<source, std::invoke_result_t<Cpo, decltype(ex::seq), int, Function>>;
+constexpr bool has_policy_form = std::invocable<Cpo, source, decltype((ex::seq)), int, Function>;
 
-static_assert(has_policy_forms<decltype(ex::bulk), each_index>);
-static_assert(has_policy_forms<decltype(ex::bulk_chunked), each_chunk>);
-static_assert(has_policy_forms<decltype(ex::bulk_unchunked), each_index>);
+static_assert(has_policy_form<decltype(ex::bulk), each_index>);
+static_assert(has_policy_form<decltype(ex::bulk_chunked), each_chunk>);
+static_assert(has_policy_form<decltype(ex::bulk_unchunked), each_index>);
 #endif
 
 template<class Domain>

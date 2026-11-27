@@ -131,54 +131,60 @@ if(FORGE_BASE_MDSPAN_AVAILABLE AND FORGE_LINALG_HAS_MDSPAN_FEATURE)
         forge_add_linalg_runtime_test(test_linalg_missing_overloads test_linalg_missing_overloads.cpp linalg_missing_overloads)
         forge_add_linalg_runtime_test(test_linalg_conformance test_linalg_conformance.cpp linalg_conformance)
         forge_add_linalg_compile_probe(test_linalg_conformance_compile test_linalg_conformance.cpp linalg_conformance_compile)
-        forge_add_linalg_compile_probe(test_linalg_policy_include_order test_linalg_policy_before.cpp linalg_policy_include_order_compile)
-        target_sources(test_linalg_policy_include_order PRIVATE
-            "${FORGE_LINALG_COMPILE_DIR}/test_linalg_policy_after.cpp")
-        add_test(NAME linalg_policy_include_order COMMAND test_linalg_policy_include_order)
-        set_tests_properties(linalg_policy_include_order PROPERTIES
-            DEPENDS linalg_policy_include_order_compile
-            TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
-        forge_add_linalg_compile_probe(test_linalg_native_execution_only test_linalg_native_execution_only.cpp linalg_native_execution_only_compile)
+        # Policy overloads follow the native policy objects. The shared
+        # discovery in test/NativePolicyTests.cmake selects the variants.
+        function(forge_linalg_policy_include_order mode suffix)
+            set(_name linalg_policy_include_order${suffix})
+            set(_target test_${_name})
+            forge_add_linalg_compile_probe(${_target} test_linalg_policy_before.cpp ${_name}_compile)
+            target_sources(${_target} PRIVATE "${FORGE_LINALG_COMPILE_DIR}/test_linalg_policy_after.cpp")
+            forge_policy_test_target(${_target} ${mode})
+            add_test(NAME ${_name} COMMAND ${_target})
+            set_tests_properties(${_name} PROPERTIES
+                DEPENDS ${_name}_compile TIMEOUT ${FORGE_TEST_TIMEOUT_SECONDS})
+        endfunction()
 
-        include("${CMAKE_CURRENT_LIST_DIR}/PolicyProbe.cmake")
-
-        function(forge_linalg_policy_target target suffix extra_flags)
-            forge_add_linalg_runtime_test(${target} test_linalg_execution_policy.cpp linalg_execution_policy${suffix})
-            target_compile_definitions(${target} PRIVATE FORGE_TEST_LINALG_REQUIRE_POLICIES=1)
-            if(extra_flags)
-                target_compile_options(${target} PRIVATE ${extra_flags})
-                target_link_options(${target} PRIVATE ${extra_flags})
-                forge_add_linalg_compile_probe(${target}_compile test_linalg_conformance.cpp linalg_policy_selection${suffix}_compile)
-                target_compile_options(${target}_compile PRIVATE ${extra_flags})
-                target_link_options(${target}_compile PRIVATE ${extra_flags})
-                target_compile_definitions(${target}_compile PRIVATE FORGE_TEST_LINALG_REQUIRE_POLICIES=1)
-                if(MSVC)
-                    target_compile_options(${target}_compile PRIVATE /bigobj)
-                endif()
-            endif()
+        # test_linalg_execution_policy.cpp does not compile without the
+        # overloads, so it is registered only in a mode that has them. Its
+        # CTests also fail when no case runs.
+        function(forge_linalg_policy_target mode suffix)
+            set(_target test_linalg_execution_policy${suffix})
+            set(FORGE_TEST_REQUIRE_GTEST_CASES ON)
+            forge_add_linalg_runtime_test(${_target} test_linalg_execution_policy.cpp linalg_execution_policy${suffix})
+            forge_policy_test_target(${_target} ${mode})
             if(MSVC)
-                target_compile_options(${target} PRIVATE /bigobj)
+                target_compile_options(${_target} PRIVATE /bigobj)
             endif()
         endfunction()
 
-        forge_linalg_check_policy_objects(FORGE_LINALG_TEST_HAS_POLICIES "")
-        if(FORGE_LINALG_TEST_HAS_POLICIES)
-            forge_linalg_policy_target(test_linalg_execution_policy "" "")
+        forge_policy_test_target(test_linalg_conformance DEFAULT)
+        forge_policy_test_target(test_linalg_conformance_compile DEFAULT)
+        forge_linalg_policy_include_order(DEFAULT "")
+        forge_add_linalg_compile_probe(test_linalg_native_execution_only test_linalg_native_execution_only.cpp linalg_native_execution_only_compile)
+        forge_policy_test_target(test_linalg_native_execution_only DEFAULT)
+
+        if(FORGE_TEST_DEFAULT_POLICY_OBJECTS)
+            forge_linalg_policy_target(DEFAULT "")
         else()
             message(STATUS "Forge: linalg policy runtime tests skipped (native policy objects unavailable)")
             add_test(NAME linalg_execution_policy_unavailable
                 COMMAND ${CMAKE_COMMAND} -E echo "SKIP: native execution policy objects unavailable")
             set_tests_properties(linalg_execution_policy_unavailable PROPERTIES SKIP_REGULAR_EXPRESSION "SKIP:")
-            if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|Zig")
-                forge_linalg_check_policy_objects(FORGE_LINALG_TEST_HAS_EXPERIMENTAL_POLICIES "-fexperimental-library")
-                if(FORGE_LINALG_TEST_HAS_EXPERIMENTAL_POLICIES)
-                    forge_linalg_policy_target(test_linalg_execution_policy_experimental _experimental "-fexperimental-library")
-                    target_compile_options(test_linalg_draft_surface PRIVATE -fexperimental-library)
-                    target_link_options(test_linalg_draft_surface PRIVATE -fexperimental-library)
-                else()
-                    message(STATUS "Forge: libc++ linalg policy variant unavailable with -fexperimental-library")
-                endif()
-            endif()
+        endif()
+        if(FORGE_TEST_EXPERIMENTAL_POLICIES)
+            forge_linalg_policy_target(EXPERIMENTAL _experimental)
+            forge_linalg_policy_include_order(EXPERIMENTAL _experimental)
+            forge_add_linalg_compile_probe(test_linalg_policy_selection_experimental
+                test_linalg_conformance.cpp linalg_policy_selection_experimental_compile OWNER STD)
+            forge_policy_test_target(test_linalg_policy_selection_experimental EXPERIMENTAL)
+        endif()
+        # The draft surface is checked with its policy overloads wherever a
+        # mode provides them: the default mode if it has the objects,
+        # otherwise the flagged one. The source asserts the mode it was given.
+        if(FORGE_TEST_EXPERIMENTAL_POLICIES AND NOT FORGE_TEST_DEFAULT_POLICY_OBJECTS)
+            forge_policy_test_target(test_linalg_draft_surface EXPERIMENTAL)
+        else()
+            forge_policy_test_target(test_linalg_draft_surface DEFAULT)
         endif()
         foreach(_target IN ITEMS test_linalg_missing_overloads
                 test_linalg_conformance test_linalg_conformance_compile

@@ -226,6 +226,36 @@ forge_add_execution_compile_probe(
     test_execution_bulk_policy_constraints
     test_execution_bulk_policy_constraints.cpp
     execution_bulk_policy_constraints_compile)
+forge_policy_test_target(test_execution_bulk_policy_constraints DEFAULT)
+
+if(FORGE_TEST_EXPERIMENTAL_POLICIES)
+    forge_add_execution_compile_probe(test_execution_bulk_policy_constraints_experimental
+        test_execution_bulk_policy_constraints.cpp execution_bulk_policy_constraints_experimental_compile OWNER STD)
+    forge_policy_test_target(test_execution_bulk_policy_constraints_experimental EXPERIMENTAL)
+endif()
+
+# [exec.adapt.obj] decay-copies the bound arguments, so the pipe form needs a
+# copyable policy, which the standard does not promise. Where the native par
+# is not copyable (libc++), pin the rejection next to a linked direct call.
+function(forge_check_execution_bulk_policy_pipe mode)
+    forge_prepare_policy_probe(${mode})
+    set(_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
+    foreach(_cpo IN ITEMS bulk bulk_chunked bulk_unchunked)
+        set(CMAKE_REQUIRED_DEFINITIONS ${_definitions} -DFORGE_TEST_BULK_CPO=${_cpo})
+        forge_expect_execution_cxx_source_compiles(FORGE_TEST_${mode}_${_cpo}_DIRECT
+            test_execution_bulk_policy_pipe.cpp TRUE
+            "The direct ${_cpo} call with a non-copyable par must compile and link (${mode})" OWNER STD)
+        list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_TEST_BULK_REJECT_PIPE=1)
+        forge_expect_execution_cxx_source_compiles(FORGE_TEST_${mode}_${_cpo}_REJECT_PIPE
+            test_execution_bulk_policy_pipe.cpp FALSE
+            "The ${_cpo} closure must reject binding a non-copyable par (${mode})" OWNER STD)
+    endforeach()
+endfunction()
+foreach(_mode IN ITEMS DEFAULT EXPERIMENTAL)
+    if(FORGE_TEST_${_mode}_POLICY_OBJECTS AND NOT FORGE_TEST_${_mode}_POLICY_COPYABLE)
+        forge_check_execution_bulk_policy_pipe(${_mode})
+    endif()
+endforeach()
 forge_add_execution_compile_probe(
     test_execution_initial_capture_constraints
     test_execution_initial_capture_constraints.cpp
@@ -550,6 +580,21 @@ forge_add_execution_runtime_test(
     execution_throwing_move_adaptors)
 forge_add_execution_runtime_test(test_execution_bulk test_execution_bulk.cpp execution_bulk)
 forge_add_execution_runtime_test(test_execution_bulk_policy test_execution_bulk_policy.cpp execution_bulk_policy)
+# The public policy calls live in their own source. It is registered only in
+# a mode that has the objects and does not compile in any other. Its CTests
+# also fail when no case runs.
+set(FORGE_TEST_REQUIRE_GTEST_CASES ON)
+if(FORGE_TEST_DEFAULT_POLICY_OBJECTS)
+    forge_add_execution_runtime_test(test_execution_bulk_native_policy
+        test_execution_bulk_native_policy.cpp execution_bulk_native_policy OWNER STD)
+    forge_policy_test_target(test_execution_bulk_native_policy DEFAULT)
+endif()
+if(FORGE_TEST_EXPERIMENTAL_POLICIES)
+    forge_add_execution_runtime_test(test_execution_bulk_native_policy_experimental
+        test_execution_bulk_native_policy.cpp execution_bulk_native_policy_experimental OWNER STD)
+    forge_policy_test_target(test_execution_bulk_native_policy_experimental EXPERIMENTAL)
+endif()
+unset(FORGE_TEST_REQUIRE_GTEST_CASES)
 forge_add_execution_runtime_test(test_execution_initial_capture test_execution_initial_capture.cpp execution_initial_capture)
 forge_add_execution_runtime_test(test_execution_write_env test_execution_write_env.cpp execution_write_env)
 forge_add_execution_runtime_test(

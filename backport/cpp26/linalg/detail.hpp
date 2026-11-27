@@ -66,7 +66,7 @@ inline constexpr bool __is_mdspan_v<std::mdspan<T, E, L, A>> = true;
 
 template<class T>
 concept __scalar = std::semiregular<T> && (!__is_mdspan_v<T>)
-#if defined(FORGE_HAS_NATIVE_EXECUTION_POLICIES)
+#if FORGE_NATIVE_EXECUTION_POLICY_OBJECTS
     && (!std::is_execution_policy_v<T>)
 #endif
     ;

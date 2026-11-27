@@ -503,7 +503,8 @@ try {
         "-DFORGE_TEST_ENABLE_SIMD=OFF",
         "-DFORGE_TEST_ENABLE_SUBMDSPAN=OFF",
         "-DFORGE_TEST_ENABLE_LINALG=OFF",
-        "-DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF"
+        "-DFORGE_TEST_ENABLE_NATIVE_HANDOFF=OFF",
+        "-DFORGE_TEST_REQUIRE_NATIVE_POLICIES=ON"
     )
     $configureOutput = Invoke-ForgeNativeOutput "configure" "cmake" $configure
     Assert-OutputContains $configureOutput.Output `

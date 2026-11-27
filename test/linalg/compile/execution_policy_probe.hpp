@@ -1,13 +1,12 @@
 #pragma once
 #include <linalg>
+#include "native_policy_config.hpp"
 #include <complex>
 #include <concepts>
 #include <type_traits>
 #include <utility>
 
-#if defined(FORGE_TEST_LINALG_REQUIRE_POLICIES) && !FORGE_LINALG_HAS_EXECUTION_POLICY_OVERLOADS
-#error "This target requires native execution policy objects"
-#endif
+static_assert(FORGE_LINALG_HAS_EXECUTION_POLICY_OVERLOADS == FORGE_NATIVE_EXECUTION_POLICY_OBJECTS);
 
 #if FORGE_LINALG_HAS_EXECUTION_POLICY_OVERLOADS
 namespace linalg_policy_probe {
@@ -259,7 +258,7 @@ static_assert(signatures<P>());
 static_assert(signatures<const P>());
 static_assert(signatures<std::execution::parallel_policy>());
 static_assert(signatures<std::execution::parallel_unsequenced_policy>());
-#if __cpp_lib_execution >= 201902L
+#if FORGE_NATIVE_EXECUTION_POLICY_UNSEQ
 static_assert(signatures<std::execution::unsequenced_policy>());
 #endif
 

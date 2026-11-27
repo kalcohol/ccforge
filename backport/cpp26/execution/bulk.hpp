@@ -301,7 +301,7 @@ struct __serial_bulk_t {
 
 template<bool Chunked, bool Transformed = false>
 struct __bulk_t {
-#if defined(FORGE_HAS_NATIVE_EXECUTION_POLICIES)
+#if FORGE_NATIVE_EXECUTION_POLICY_OBJECTS
     template<std::execution::sender S, class Policy, std::integral Shape, class Fn>
         requires std::is_execution_policy_v<std::remove_cvref_t<Policy>> &&
                  std::copy_constructible<std::decay_t<Fn>> &&

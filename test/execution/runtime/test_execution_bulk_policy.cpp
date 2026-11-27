@@ -89,39 +89,6 @@ void check_borrowed_categories() {
     }
 }
 
-#if FORGE_TEST_BULK_HAS_NATIVE_POLICIES
-template<class Algo, class Policy, class Fn>
-void check_native(Algo algo, const Policy& policy, Fn fn) {
-    auto sender = algo(ex::just(10), policy, 3, fn);
-    using stored = stored_policy_t<decltype(sender)>;
-    if constexpr (std::copy_constructible<Policy>) {
-        static_assert(std::same_as<stored, Policy>);
-        EXPECT_NE(std::addressof(sender.__policy), std::addressof(policy));
-    } else {
-        static_assert(std::same_as<stored, const Policy&>);
-        EXPECT_EQ(std::addressof(sender.__policy), std::addressof(policy));
-    }
-    auto result = std::this_thread::sync_wait(std::move(sender));
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(std::get<0>(*result), 13);
-    if constexpr (std::constructible_from<Policy, const Policy&>) {
-        auto bound = algo(policy, 3, fn);
-        static_assert(std::same_as<decltype(bound.__policy_), Policy>);
-        auto from_bound = ex::just(10) | bound;
-        auto bound_result = std::this_thread::sync_wait(std::move(from_bound));
-        ASSERT_TRUE(bound_result.has_value());
-        EXPECT_EQ(std::get<0>(*bound_result), 13);
-    }
-}
-
-template<class Policy>
-void check_native_policy(const Policy& policy) {
-    check_native(ex::bulk, policy, callback<false>{});
-    check_native(ex::bulk_unchunked, policy, callback<false>{});
-    check_native(ex::bulk_chunked, policy, callback<true>{});
-}
-#endif
-
 } // namespace
 
 TEST(ExecutionBulkPolicy, CopyableImplementationPoliciesOwnExactCvrefCopies) {
@@ -165,17 +132,4 @@ TEST(ExecutionBulkPolicy, ThrowingCopiesAreNotReplacedByBorrowing) {
     auto result = std::this_thread::sync_wait(bound(ex::just(10)));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(std::get<0>(*result), 13);
-}
-
-TEST(ExecutionBulkPolicy, StandardPoliciesUsePublicFullCallsAndOwnedInitialBinding) {
-#if FORGE_TEST_BULK_HAS_NATIVE_POLICIES
-    check_native_policy(ex::seq);
-    check_native_policy(ex::par);
-    check_native_policy(ex::par_unseq);
-#if FORGE_TEST_BULK_HAS_UNSEQ
-    check_native_policy(ex::unseq);
-#endif
-#else
-    GTEST_SKIP() << "Native <execution> does not declare policies in this library configuration";
-#endif
 }

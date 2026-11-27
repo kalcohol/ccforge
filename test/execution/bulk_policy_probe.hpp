@@ -9,32 +9,6 @@
 #include <type_traits>
 #include <utility>
 
-// A native <execution> header can exist without declaring policy objects.
-#if defined(_LIBCPP_VERSION)
-#if defined(_LIBCPP_HAS_EXPERIMENTAL_PSTL)
-#if _LIBCPP_HAS_EXPERIMENTAL_PSTL && _LIBCPP_STD_VER >= 17
-#define FORGE_TEST_BULK_HAS_NATIVE_POLICIES 1
-#endif
-#elif _LIBCPP_VERSION < 200000 && !defined(_LIBCPP_HAS_NO_INCOMPLETE_PSTL) && _LIBCPP_STD_VER >= 17
-#define FORGE_TEST_BULK_HAS_NATIVE_POLICIES 1
-#endif
-#elif defined(_PSTL_EXECUTION_POLICIES_DEFINED) || \
-    (defined(__cpp_lib_execution) && __cpp_lib_execution >= 201603L)
-#define FORGE_TEST_BULK_HAS_NATIVE_POLICIES 1
-#endif
-
-#ifndef FORGE_TEST_BULK_HAS_NATIVE_POLICIES
-#define FORGE_TEST_BULK_HAS_NATIVE_POLICIES 0
-#endif
-
-#if FORGE_TEST_BULK_HAS_NATIVE_POLICIES && \
-    ((defined(_LIBCPP_VERSION) && _LIBCPP_STD_VER >= 20) || \
-     (defined(__cpp_lib_execution) && __cpp_lib_execution >= 201902L))
-#define FORGE_TEST_BULK_HAS_UNSEQ 1
-#else
-#define FORGE_TEST_BULK_HAS_UNSEQ 0
-#endif
-
 namespace bulk_policy_probe {
 
 namespace ex = std::execution;

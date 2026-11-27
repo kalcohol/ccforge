@@ -43,7 +43,8 @@ static void check_policy_calls()
     check(std::execution::seq);
     check(std::execution::par);
     check(std::execution::par_unseq);
-#if __cpp_lib_execution >= 201902L
+#if FORGE_NATIVE_EXECUTION_POLICY_UNSEQ || \
+    (!defined(FORGE_NATIVE_EXECUTION_POLICY_UNSEQ) && __cpp_lib_execution >= 201902L)
     check(std::execution::unseq);
 #endif
 }

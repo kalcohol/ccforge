@@ -38,24 +38,42 @@ function(forge_expect_forge_cxx_source_compiles result_var source_name should_co
         OWNER FORGE)
 endfunction()
 
-function(forge_check_bulk_policy_objects result_var)
-    # Use the same <execution> selection as Forge tests. Test the policy
-    # capability independently so a regression in <forge/bulk.hpp> fails the
-    # explicit-shape control instead of silently disabling the tests.
-    set(CMAKE_REQUIRED_INCLUDES "")
-    _forge_prepare_test_probe(OWNER FORGE)
-    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
-    unset(${result_var} CACHE)
-    check_cxx_source_compiles([=[
-        #include <execution>
-        #if defined(FORGE_NATIVE_EXECUTION_POLICY_OBJECTS)
-        static_assert(FORGE_NATIVE_EXECUTION_POLICY_OBJECTS);
-        #elif !defined(__cpp_lib_execution) || __cpp_lib_execution < 201603L
-        #error Native execution policy objects are unavailable
-        #endif
-        int main() {}
-    ]=] ${result_var})
-    set(${result_var} "${${result_var}}" PARENT_SCOPE)
+# <forge/bulk.hpp> provides its three names exactly when senders are usable
+# and native policy objects exist. Check the surface in the given policy mode,
+# with its real flags, and report the expectation as FORGE_TEST_<mode>_FORGE_BULK.
+function(forge_check_bulk_policy_surface mode)
+    forge_prepare_policy_probe(${mode})
+    set(_source "${FORGE_COMPILE_DIR}/test_forge_bulk_explicit_shapes.cpp")
+    set(_expected 0)
+    if(FORGE_FORCE_SENDERS_BACKPORT OR FORGE_SENDERS_FULL OR NOT FORGE_SENDERS_PARTIAL)
+        if(FORGE_NEEDS_BACKPORT)
+            set(_expected "${FORGE_TEST_${mode}_POLICY_OBJECTS}")
+        else()
+            # Without the wrapper the header falls back to the advertised
+            # feature-test macro, not to the presence of the native names.
+            set(_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
+            list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_TEST_FORGE_BULK_FALLBACK_ADVERTISED=1)
+            forge_detect_cxx_source_compiles(FORGE_TEST_${mode}_FORGE_BULK_FALLBACK "${_source}" OWNER FORGE)
+            set(CMAKE_REQUIRED_DEFINITIONS "${_definitions}")
+            if(FORGE_TEST_${mode}_FORGE_BULK_FALLBACK)
+                set(_expected 1)
+            endif()
+        endif()
+    endif()
+    list(APPEND CMAKE_REQUIRED_DEFINITIONS -DFORGE_TEST_EXPECT_FORGE_BULK=${_expected})
+    forge_expect_cxx_source_compiles(FORGE_TEST_${mode}_FORGE_BULK_SURFACE
+        "${_source}" TRUE
+        "The Forge bulk header and its explicit const shapes must compile and link (${mode})" OWNER FORGE)
+    if(NOT _expected)
+        set(_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
+        foreach(_cpo IN ITEMS bulk bulk_chunked bulk_unchunked)
+            set(CMAKE_REQUIRED_DEFINITIONS ${_definitions} -DFORGE_TEST_FORGE_BULK_ABSENT=${_cpo})
+            forge_expect_cxx_source_compiles(FORGE_TEST_${mode}_FORGE_ABSENT_${_cpo}
+                "${_source}" FALSE
+                "forge::${_cpo} must be absent when Forge bulk is unavailable (${mode})" OWNER FORGE)
+        endforeach()
+    endif()
+    set(FORGE_TEST_${mode}_FORGE_BULK ${_expected} PARENT_SCOPE)
 endfunction()
 
 function(forge_register_simd_extension_tests)
@@ -106,16 +124,9 @@ if(FORGE_FORCE_SENDERS_BACKPORT
         "Forge execution aliases and split must work with the execution backport")
 endif()
 
-set(_forge_bulk_available OFF)
-if(FORGE_FORCE_SENDERS_BACKPORT OR FORGE_SENDERS_FULL OR NOT FORGE_SENDERS_PARTIAL)
-    forge_check_bulk_policy_objects(FORGE_TEST_BULK_POLICY_OBJECTS)
-    set(_forge_bulk_available "${FORGE_TEST_BULK_POLICY_OBJECTS}")
-endif()
-if(_forge_bulk_available)
-    forge_expect_forge_cxx_source_compiles(
-        FORGE_BULK_EXPLICIT_SHAPES_CONTROL
-        test_forge_bulk_explicit_shapes.cpp ON
-        "Forge bulk must accept explicit const shapes when native execution policy objects are available")
+forge_check_bulk_policy_surface(DEFAULT)
+if(FORGE_TEST_EXPERIMENTAL_POLICIES)
+    forge_check_bulk_policy_surface(EXPERIMENTAL)
 endif()
 
 if(FORGE_TEST_ENABLE_FORGE_RUNTIME
@@ -317,10 +328,21 @@ if(FORGE_FORCE_SENDERS_BACKPORT
     if(FORGE_TEST_ENABLE_FORGE_RUNTIME)
         forge_add_forge_test(test_forge_execution_extensions
             test_forge_execution_extensions.cpp forge_execution_extensions)
-        if(_forge_bulk_available)
+        # The source does not compile without forge::bulk, so each variant is
+        # registered only in a mode that provides it. Its CTests also fail
+        # when no case runs.
+        set(FORGE_TEST_REQUIRE_GTEST_CASES ON)
+        if(FORGE_TEST_DEFAULT_FORGE_BULK)
             forge_add_forge_test(test_forge_serial_bulk
                 test_forge_serial_bulk.cpp forge_serial_bulk)
+            forge_policy_test_target(test_forge_serial_bulk DEFAULT)
         endif()
+        if(FORGE_TEST_EXPERIMENTAL_FORGE_BULK)
+            forge_add_forge_test(test_forge_serial_bulk_experimental
+                test_forge_serial_bulk.cpp forge_serial_bulk_experimental)
+            forge_policy_test_target(test_forge_serial_bulk_experimental EXPERIMENTAL)
+        endif()
+        unset(FORGE_TEST_REQUIRE_GTEST_CASES)
         forge_add_forge_test(test_forge_predecessor_lifetime
             test_forge_predecessor_lifetime.cpp forge_predecessor_lifetime)
         forge_add_forge_test(test_forge_split_allocations

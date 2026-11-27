@@ -1,6 +1,7 @@
 #include <forge/bulk.hpp>
 #include <execution>
 #include <gtest/gtest.h>
+#include "native_policy_config.hpp"
 #include "observe_completion.hpp"
 
 #include <array>
@@ -34,6 +35,23 @@ auto each_chunk(std::array<int, 2>& range) {
     };
 }
 
+struct stateful_index {
+    int digit;
+    int* copies;
+    int* moves;
+
+    stateful_index(int initial, int& copy_count, int& move_count) noexcept
+        : digit(initial), copies(&copy_count), moves(&move_count) {}
+    stateful_index(const stateful_index& other) noexcept
+        : digit(other.digit), copies(other.copies), moves(other.moves) { ++*copies; }
+    stateful_index(stateful_index&& other) noexcept(false)
+        : digit(other.digit), copies(other.copies), moves(other.moves) { ++*moves; }
+
+    void operator()(int index, int& value) const noexcept {
+        value = value * 10 + digit + index;
+    }
+};
+
 } // namespace
 
 TEST(ForgeBulk, DirectAndPipeVisitIndexesInOrder) {
@@ -50,6 +68,23 @@ TEST(ForgeBulk, DirectAndPipeUseOneSerialChunk) {
     range = {-1, -1};
     expect_value(ex::just(1) | forge::bulk_chunked(4, each_chunk(range)), 5);
     EXPECT_EQ(range, (std::array{0, 4}));
+}
+
+TEST(ForgeBulk, BindingCopiesCallbackStateWithoutMovingIt) {
+    int copies = 0;
+    int moves = 0;
+    stateful_index callback(2, copies, moves);
+    int shape = 3;
+    static_assert(noexcept(forge::bulk(shape, callback)));
+    static_assert(!noexcept(forge::bulk(shape, std::move(callback))));
+    auto bound = forge::bulk(shape, callback);
+    EXPECT_EQ(copies, 1);
+    EXPECT_EQ(moves, 0);
+    callback.digit = 6;
+    shape = 1;
+    expect_value(ex::just(1) | bound, 1234);
+    expect_value(ex::just(1) | std::as_const(bound), 1234);
+    expect_value(ex::just(1) | std::move(std::as_const(bound)), 1234);
 }
 
 TEST(ForgeBulk, ForwardsStoppedAndCallbackErrors) {

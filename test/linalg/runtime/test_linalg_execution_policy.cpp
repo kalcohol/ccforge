@@ -1,5 +1,6 @@
 #include "../extended_cases.hpp"
 #include "../proxy_cases.hpp"
+#include "native_policy_config.hpp"
 #include <atomic>
 #include <cstdlib>
 #include <exception>
@@ -100,7 +101,7 @@ TEST(LinalgExecutionPolicy, ParUnseq) { policy_cases(std::execution::par_unseq);
 TEST(LinalgExecutionPolicyDeathTest, Seq) { death_cases(std::execution::seq); }
 TEST(LinalgExecutionPolicyDeathTest, Par) { death_cases(std::execution::par); }
 TEST(LinalgExecutionPolicyDeathTest, ParUnseq) { death_cases(std::execution::par_unseq); }
-#if __cpp_lib_execution >= 201902L
+#if FORGE_NATIVE_EXECUTION_POLICY_UNSEQ
 TEST(LinalgExecutionPolicy, Unseq) { policy_cases(std::execution::unseq); }
 TEST(LinalgExecutionPolicyDeathTest, Unseq) { death_cases(std::execution::unseq); }
 #endif

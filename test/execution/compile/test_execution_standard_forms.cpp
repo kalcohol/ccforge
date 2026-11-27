@@ -118,13 +118,10 @@ int main() {
     static_assert(ex::sender<decltype(ex::just(42) | test_bulk::bulk_chunked(0, each_chunk{}))>);
     static_assert(ex::sender<decltype(test_bulk::bulk_unchunked(ex::just(42), 0, each_index{}))>);
     static_assert(ex::sender<decltype(ex::just(42) | test_bulk::bulk_unchunked(0, each_index{}))>);
-#if FORGE_TEST_BULK_HAS_NATIVE_POLICIES
+#if FORGE_NATIVE_EXECUTION_POLICY_OBJECTS
     static_assert(ex::sender<decltype(ex::bulk(ex::just(42), ex::seq, 0, each_index{}))>);
-    static_assert(ex::sender<decltype(ex::just(42) | ex::bulk(ex::seq, 0, each_index{}))>);
     static_assert(ex::sender<decltype(ex::bulk_chunked(ex::just(42), ex::seq, 0, each_chunk{}))>);
-    static_assert(ex::sender<decltype(ex::just(42) | ex::bulk_chunked(ex::seq, 0, each_chunk{}))>);
     static_assert(ex::sender<decltype(ex::bulk_unchunked(ex::just(42), ex::seq, 0, each_index{}))>);
-    static_assert(ex::sender<decltype(ex::just(42) | ex::bulk_unchunked(ex::seq, 0, each_index{}))>);
 #endif
 
     auto sndr = ex::just(42);

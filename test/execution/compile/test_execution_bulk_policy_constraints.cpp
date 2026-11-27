@@ -1,17 +1,11 @@
 #include "../bulk_policy_probe.hpp"
+#include "native_policy_config.hpp"
 
 #include <concepts>
 #include <type_traits>
 #include <utility>
 
 using namespace bulk_policy_probe;
-
-#if defined(FORGE_TEST_BULK_REQUIRE_NATIVE_POLICIES)
-static_assert(FORGE_TEST_BULK_HAS_NATIVE_POLICIES,
-    "This verification lane requires real standard execution policies");
-static_assert(FORGE_TEST_BULK_HAS_UNSEQ,
-    "This verification lane requires the C++20 unsequenced policy");
-#endif
 
 template<class Bound>
 concept applicable_both = std::is_invocable_v<Bound, source_t> &&
@@ -44,7 +38,7 @@ static_assert(!std::copy_constructible<explicit_copy_policy>);
 static_assert(std::copy_constructible<throwing_copy_policy>);
 static_assert(!std::is_nothrow_copy_constructible_v<throwing_copy_policy>);
 
-#if FORGE_TEST_BULK_HAS_NATIVE_POLICIES
+#if FORGE_NATIVE_EXECUTION_POLICY_OBJECTS
 template<class Algo, class Policy, class Fn>
 concept full_callable = requires(Algo algo, Policy&& policy, Fn fn) {
     algo(ex::just(10), static_cast<Policy&&>(policy), 3, fn);
@@ -85,6 +79,18 @@ void check_native_policy() {
     check_native<std::remove_cvref_t<decltype(ex::bulk_unchunked)>, Policy, callback<false>>();
     check_native<std::remove_cvref_t<decltype(ex::bulk_chunked)>, Policy, callback<true>>();
 }
+#else
+// Lookup across two bases is ambiguous if the public CPO still declares
+// operator(), even when no native policy is available to satisfy its constraints.
+struct fallback_call { void operator()() const; };
+template<class Algo>
+struct lookup_call : std::remove_cvref_t<Algo>, fallback_call {};
+template<class Algo>
+concept no_policy_overloads = requires(const lookup_call<Algo>& algorithm) { algorithm(); };
+
+static_assert(no_policy_overloads<decltype(ex::bulk)>);
+static_assert(no_policy_overloads<decltype(ex::bulk_chunked)>);
+static_assert(no_policy_overloads<decltype(ex::bulk_unchunked)>);
 #endif
 
 template<bool Chunked>
@@ -99,11 +105,11 @@ void check_implementation() {
 int main() {
     check_implementation<false>();
     check_implementation<true>();
-#if FORGE_TEST_BULK_HAS_NATIVE_POLICIES
+#if FORGE_NATIVE_EXECUTION_POLICY_OBJECTS
     check_native_policy<std::remove_cvref_t<decltype(ex::seq)>>();
     check_native_policy<std::remove_cvref_t<decltype(ex::par)>>();
     check_native_policy<std::remove_cvref_t<decltype(ex::par_unseq)>>();
-#if FORGE_TEST_BULK_HAS_UNSEQ
+#if FORGE_NATIVE_EXECUTION_POLICY_UNSEQ
     check_native_policy<std::remove_cvref_t<decltype(ex::unseq)>>();
 #endif
 #endif

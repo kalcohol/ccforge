@@ -185,7 +185,8 @@ target_gcc16() {
     assert_complete_stands_aside "${logfile}" "std::submdspan" SUBMDSPAN
     assert_backport_injects "${logfile}" "std::hive" HIVE
     log "gcc16: building + testing (native handoff must compile cleanly)"
-    container_run forge-gcc16 build/gcc16 26 "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}"
+    container_run forge-gcc16 build/gcc16 26 "${FORGE_NATIVE_HANDOFF_ONLY_TEST_ARGS[@]}" \
+        -DFORGE_TEST_REQUIRE_NATIVE_POLICIES=ON
 
     log "gcc16: building examples against partial-native standard surfaces"
     "${PODMAN}" run --rm --userns=keep-id -v "${REPO_ROOT}:/src:Z" -w /src forge-gcc16 \
@@ -228,7 +229,7 @@ target_llvm() {
     build_image forge-llvm containers/Containerfile.llvm
     log "llvm/libc++: configuring + testing -std=c++26 (all backports inject)"
     local logfile="${LOG_DIR}/llvm-configure.log"
-    container_run forge-llvm build/llvm 26 2>&1 | tee "${logfile}"
+    container_run forge-llvm build/llvm 26 -DFORGE_TEST_REQUIRE_LIBCPP_EXPERIMENTAL_POLICIES=ON 2>&1 | tee "${logfile}"
     local probe
     for probe in SIMD SENDERS CONSTANT_WRAPPER MDSPAN_PADDED_LAYOUTS SUBMDSPAN LINALG HIVE; do
         assert_backport_injects "${logfile}" "${probe}" "${probe}"
@@ -286,7 +287,8 @@ target_gcc_exec() {
         -DFORGE_TEST_ENABLE_FORGE_RUNTIME=ON \
         -DFORGE_TEST_ENABLE_FORGE_RESOURCE=ON \
         -DFORGE_TEST_ENABLE_FORGE_IO=ON \
-        -DFORGE_TEST_ENABLE_FORGE_ERASURE=ON
+        -DFORGE_TEST_ENABLE_FORGE_ERASURE=ON \
+        -DFORGE_TEST_REQUIRE_NATIVE_POLICIES=ON
     ok "gcc-exec verified (execution + forge utilities on libstdc++)"
 }
 
@@ -318,7 +320,7 @@ target_tsan() {
                 build/tsan \
                 "execution|forge" \
                 build/tsan/ctest-first-run.log
-        ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}"
+        ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}" -DFORGE_TEST_REQUIRE_LIBCPP_EXPERIMENTAL_POLICIES=ON
     if should_run_io_uring_gate build/tsan; then
         log "tsan: running io_uring runtime tests in the allow-io_uring container"
         TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1" \
@@ -366,7 +368,8 @@ target_asan() {
                 build/asan \
                 "execution|forge|hive" \
                 build/asan/ctest-first-run.log
-        ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}" -DFORGE_TEST_ENABLE_HIVE=ON
+        ' bash "${FORGE_EXECUTION_AND_FORGE_TEST_ARGS[@]}" -DFORGE_TEST_ENABLE_HIVE=ON \
+            -DFORGE_TEST_REQUIRE_LIBCPP_EXPERIMENTAL_POLICIES=ON
     if should_run_io_uring_gate build/asan; then
         log "asan: running io_uring runtime tests in the allow-io_uring container"
         ASAN_OPTIONS="detect_container_overflow=0:abort_on_error=1" \

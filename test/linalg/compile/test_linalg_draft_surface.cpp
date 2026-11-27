@@ -1,4 +1,5 @@
 #include <linalg>
+#include "native_policy_config.hpp"
 
 #include <complex>
 #include <mdspan>
@@ -154,6 +155,11 @@ static_assert(draft_signatures<>());
 static_assert(setup_rotation<double, double> && setup_rotation<C, C>);
 static_assert(!setup_rotation<int, int> && !setup_rotation<custom_scalar, custom_scalar>);
 static_assert(explicit_setup_rotation<double> && !explicit_setup_rotation<const double>);
+
+// The policy assertions below must not disappear silently: the overloads
+// exist exactly when the target's policy mode has the native objects.
+static_assert(FORGE_LINALG_HAS_EXECUTION_POLICY_OVERLOADS == FORGE_TEST_EXPECT_POLICY_OBJECTS,
+    "The linalg policy overloads must follow this target's policy mode");
 
 #if FORGE_LINALG_HAS_EXECUTION_POLICY_OVERLOADS
 static_assert(draft_signatures<const std::execution::sequenced_policy&>());
