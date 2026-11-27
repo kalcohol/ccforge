@@ -261,8 +261,8 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   `transform_env` 已不在当前 working draft surface，因此本 backport 不暴露该旧拼写。
 - `std::execution::task`、`task_scheduler` 和 `with_error` 按分阶段试点引入，尚未发布
   `__cpp_lib_task`。`task_scheduler` 的普通调度（E1）和 `task` 的 frame 所有权与终止
-  交付（F）以及 frame 分配（G1）已实现；promise 环境的 allocator / stop token 查询、start
-  scheduler 的 allocator 分支以及 await 路径的资格验证属于后续批次，逐行状态见
+  交付（F）、frame 分配（G1）以及环境和 start scheduler 选择（G2）已实现；
+  promise 环境的 stop token 查询、await 路径与类表面的资格验证属于后续批次，逐行状态见
   [conformance ledger](../roadmap/execution-conformance-ledger.md#f-task-frame-and-terminal-notes)。
   `forge::task` 与 `forge::io::io_task` 是不同契约的 Forge extensions，与这组标准类型
   相互独立。标准 `task` 有四条设计约束，它们来自草案本身（[P4007R3](https://wg21.link/P4007R3)
@@ -275,6 +275,14 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   `co_yield with_error{e}` 的 payload 在 frame 销毁前多移动一次（Forge 记录的选择），因此
   payload 必须可移动构造；到目标错误类型的转换在 frame 销毁之后进行，转换抛出时走
   `exception_ptr` 通道，`error_types` 未列出该通道则调用 `terminate`。
+  start scheduler 的选中表达式按草案原样求值：prvalue 查询结果直接初始化构造函数参数，没有
+  额外的拷贝或移动。精确匹配、`S(s, a)`、`S(s)`、`S(a)` 都把 `get_env(rcvr)` 保留到
+  operation 析构，因此引用到环境内部的查询结果在整个异步生命周期内有效；SCHED 构造在已连接的
+  operation 内而不是 coroutine frame 内，先于环境析构、晚于 frame 销毁后的错误转换。
+  引用类型的 `start_scheduler_type` 被 `static_assert` 拒绝（比草案更严格的偏差）：按字面
+  理解，SCHED 会是由选中表达式初始化的引用，prvalue 结果时即悬垂，而何时可以安全地保留引用
+  没有通用判据；因此 SCHED 始终是 `start_scheduler_type` 类型的对象，该类型必须是对象类型。
+  保留对 prvalue 构造实参的引用的 scheduler 不在契约之内。
 - `connect` 的 awaitable fallback 保存 sender 与 receiver 到全局分配的 coroutine frame，
   operation 的 noexcept move 转移 handle 并清空源对象，析构仅销毁非空 frame，
   `start` 恢复 frame。此连接路径可能抛出分配或参数构造异常，
