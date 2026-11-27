@@ -121,6 +121,20 @@ forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_TASK_ALLOCATION_REJEC
     test_execution_task_allocation_mandate.cpp OFF "task frame allocation must reject a fancy pointer" OWNER STD)
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_task_probe_defs}")
 
+# The environment ladders, the connect-time allocator Mandate and the start
+# scheduler selection each have a last resort whose absence is an error. A
+# reference start_scheduler_type is rejected.
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_TASK_ENV_CONTROL
+    test_execution_task_environment_rejections.cpp ON "The accepted task environments must compile" OWNER STD)
+foreach(_case IN ITEMS OWN_ENV ENVIRONMENT ALLOCATOR START_SCHEDULER THROWING_SCHEDULER_ALLOCATOR
+        REFERENCE_SCHEDULER REFERENCE_SCHEDULER_CLASS)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_task_probe_defs} -DFORGE_TASK_ENV_REJECT_${_case}=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_TASK_ENV_REJECT_${_case}
+        test_execution_task_environment_rejections.cpp OFF "task environment must reject ${_case}" OWNER STD)
+endforeach()
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_task_probe_defs}")
+unset(_case)
+
 # Record how this toolchain implements the optional<U&>::emplace constraint of
 # a reference result: 1 library trait, 2 compiler builtin, 0 the stricter
 # approximation. The first two are exact.
@@ -479,6 +493,14 @@ forge_add_execution_runtime_test(
     test_execution_task_allocation
     test_execution_task_allocation.cpp
     execution_task_allocation OWNER STD)
+
+forge_add_execution_runtime_test(
+    test_execution_task_environment
+    test_execution_task_environment.cpp
+    execution_task_environment OWNER STD)
+if(MSVC)
+    target_compile_options(test_execution_task_environment PRIVATE /bigobj)
+endif()
 
 function(forge_detect_execution_task_scheduler_policy)
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
