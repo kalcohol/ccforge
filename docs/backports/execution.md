@@ -126,7 +126,7 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   target 消费。`backport/cpp26/execution/*.hpp` 是实现 fragment，不是独立公共入口；
   直接 include fragment（尤其先于平台 `<execution>`）不受支持，可能绕过 wrapper
   prelude / feature decisions，并在 libc++ inline namespace 或
-  `FORGE_HAS_NATIVE_EXECUTION_POLICIES` 等配置上形成跨 TU 不一致。
+  `FORGE_NATIVE_EXECUTION_POLICY_OBJECTS` 等配置上形成跨 TU 不一致。
 - 工作草案 MANDATE-NOTHROW 与 [exec.recv.concepts] 要求完成函数
   `set_value`、`set_error`、`set_stopped` 不抛异常，receiver 可不抛异常地移动。
   这些是标准要求；配置期负面编译探测固定这些规则。
@@ -168,10 +168,23 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   `get_completion_signatures(sender, env)` 会先按同一 transform 模型得到最终 sender 类型，
   再读取 completion signatures；非 default-domain 路径允许原 sender 没有 raw
   completion signatures，只要 transformed sender 提供可用 signatures。
-- `bulk` / `bulk_unchunked` / `bulk_chunked` 在底层标准库暴露 execution policy traits /
-  objects 时接受 current-WD 的 execution-policy-shaped 调用。当前实现为串行 subset。
+- `bulk` / `bulk_unchunked` / `bulk_chunked` 只在原生 `<execution>` 提供 policy 对象时
+  声明 current-WD 的 policy 重载。仅有头文件或 policy trait 不足以开启重载。
+  Backport wrapper 按翻译单元读取 libc++ 的 PSTL 配置或 libstdc++ / MSVC STL 的
+  `__cpp_lib_execution`，并单独检测 C++20 的 `unseq`。Forge 不定义 policy 或标准 feature-test macro。
+  普通 libc++ 未提供这些对象时，传入 policy 的 bulk 调用不可用。实验模式需要在编译和链接
+  时使用 `-fexperimental-library`，共享 policy 相关 inline 代码的翻译单元必须使用一致配置。
+  libc++ 16 及更早一律视为没有 policy 对象（下限）。libc++ 17、18 与 20 及以上的判定取自
+  各版本头文件的条件，尚未经验证 lane 运行（derived, not exercised）；libc++ 19、Zig 自带的
+  libc++ 和 Apple 的 libc++ 经过运行。
+  当前实现为串行 subset。
   `bulk` 与 `bulk_unchunked` 在完成线程逐 index 调用，`bulk_chunked` 对正数 shape 调用一个 `[0, shape)` chunk，零或负数 shape 不调用 callback；
   policy 不引入并行执行。
+- Policy 类型是否可复制未规定。libc++ 实验模式中的 policy 对象不可复制，因而
+  `bulk(sndr, std::execution::par, 4, f)` 可以使用，但
+  `sndr | bulk(std::execution::par, 4, f)` 无法按 [exec.adapt.obj](https://eel.is/c++draft/exec.adapt.obj)
+  decay-copy 绑定的 policy。`bulk_chunked` 和 `bulk_unchunked` 同理。需要可移植的
+  policy 调用时使用直接形式。
 - `on` 当前是 current-WD 的实用 subset：`on(scheduler, sender)` 通过 receiver env 中的
   `get_start_scheduler` 返回原调度器；`on(sender, scheduler, closure)` 在 signatures 与
   connect 中均以 `get_completion_scheduler<set_value_t>(get_env(child), get_env(rcvr))`
@@ -701,7 +714,8 @@ backport 将随工作草案更新。`starts_on(sch, sndr)` 与 `schedule_from(sn
 
 `<forge/bulk.hpp>` 的三个入口调用相应标准 adaptor 并传入 `std::execution::seq`。
 它们需要原生 execution policy 对象，并要求已注入 execution backport 或有完整原生
-senders。Backport 实现按索引顺序执行，`bulk_chunked` 对正数 shape 执行一个 chunk。
+senders。Forge 的 pipe closure 只绑定 shape 和 callback，应用时才把 `seq` 传给直接调用，
+因此不要求 policy 可复制。Backport 实现按索引顺序执行，`bulk_chunked` 对正数 shape 执行一个 chunk。
 `forge::transfer_just` 组合 `just` 与 `continues_on`，可用于完整原生实现。
 
 `forge::sync_wait` 与 `std::this_thread::sync_wait` 是同一个对象，原生与 backport

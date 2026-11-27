@@ -109,10 +109,12 @@ auto sum = std::linalg::dot(v, v);
 ### Execution policies
 
 仅在原生 `<execution>` 提供 policy 对象时声明全部 78 个 policy 重载。共享的
-native-only header detection 从 backport include root 加载原生头，并在加载后检查
-`__cpp_lib_execution`，不会定义任何标准 feature-test macro，也不会因为包含 `<linalg>`
-而加载 Forge P2300 backport。`<execution>` 在 `<linalg>` 前后包含的结果一致；同一
-工具链配置的不同翻译单元具有相同入口集合。
+native-only wrapper 从 backport include root 加载原生头，按翻译单元检查 libc++ 的 PSTL
+配置或 libstdc++ / MSVC STL 的 `__cpp_lib_execution`，并单独检测 C++20 的 `unseq`。
+这与 execution backport 使用同一判定，不会定义任何标准 feature-test macro，也不会因为
+包含 `<linalg>` 而加载 Forge P2300 backport。libc++ 通过 `-fexperimental-library` 提供
+policy 时，编译和链接都需带该选项。`<execution>` 在 `<linalg>` 前后包含的结果一致，
+共享 policy 相关 inline 代码的翻译单元必须使用一致配置。
 
 接受 `std::is_execution_policy_v<std::remove_cvref_t<ExecutionPolicy>>` 为真的原生
 标准或 implementation-defined policy。所有 policy 均在调用线程顺序执行，不分配

@@ -446,7 +446,8 @@ Backport 与完整原生实现中的 `forge::sync_wait` 都是 `std::this_thread
 | --- | --- | --- | --- |
 | `FORGE_EXECUTION_BACKPORT_ACTIVE` | 注入的 execution 聚合头 | 注入时定义为 `1`，未注入时不定义 | `split.hpp`、`bulk.hpp` |
 | `FORGE_NATIVE_SENDERS_COMPLETE` | `forge.cmake` 的标准库 senders 探测 | 完整为 `1`，部分实现为 `0`，无原生实现时不定义 | `split.hpp`、`bulk.hpp` |
-| `FORGE_NATIVE_EXECUTION_POLICY_OBJECTS` | 原生 execution wrapper | 找到原生 policy 头文件且 `__cpp_lib_execution >= 201603L` 时为 `1`（标准库声明支持 policy 对象），否则为 `0`；`0` 只表示未声明支持，不排除实验性配置下已提供 `seq`。未经过 wrapper 时可能未定义 | `bulk.hpp` |
+| `FORGE_NATIVE_EXECUTION_POLICY_OBJECTS` | 原生 execution wrapper | 原生 `seq`、`par` 和 `par_unseq` 可用时为 `1`，否则为 `0`。libc++ 按翻译单元的 PSTL 配置判定，其他标准库按 `__cpp_lib_execution >= 201603L` 判定。libc++ 16 及更早一律为 `0`，即使该库的外置 PSTL 提供了这些名字（各版本的判定见 [testing.md](testing.md) 的“原生 execution policy 模式”）。未经过 wrapper 时可能未定义 | `bulk.hpp` |
+| `FORGE_NATIVE_EXECUTION_POLICY_UNSEQ` | 原生 execution wrapper | 原生 C++20 `unseq` 可用时为 `1`，否则为 `0`，libc++ 16 及更早同样一律为 `0`。未经过 wrapper 时可能未定义 | 标准 backport 的验证测试 |
 
 `split.hpp` 优先检查 backport 是否已注入，即使完整性探测报告 `0` 也不影响注入路径。
 未注入时，`FORGE_NATIVE_SENDERS_COMPLETE` 为 `1` 才启用，值为 `0` 时不启用。
@@ -462,7 +463,8 @@ Backport 与完整原生实现中的 `forge::sync_wait` 都是 `std::this_thread
 `forge::bulk_unchunked`，仅在有原生 execution policy 对象且已注入 execution backport
 或有完整原生 senders（同样要求 policy 对象）时可用。没有原生 policy 对象的配置不声明这三个入口。
 三者支持 `adaptor(sndr, shape, f)` 与 `sndr | adaptor(shape, f)`，两种形式都以
-`std::execution::seq` 调用对应的标准 adaptor。Backport 在完成线程串行执行。
+`std::execution::seq` 调用对应的标准 adaptor。Forge 的 closure 只保存用于绑定的 shape
+与 callback，因此不会复制 `seq`。Backport 在完成线程串行执行。
 在该路径中，`bulk` 与 `bulk_unchunked` 按顺序为每个索引调用
 `f(index, values...)`，`bulk_chunked` 对正整数 shape 调用一次
 `f(0, shape, values...)`。前序的 error 与 stopped completion 继续转发，

@@ -593,8 +593,12 @@ transform 的选择回归。`execution_standard_forms_compile` 构建标准调�
 `CL` 的选项加在命令行选项之前，将 `_CL_` 的选项加在命令行选项之后。
 `forge_serial_bulk` 覆盖 Forge 三种串行算法的 direct 与 pipe 调用、索引顺序、
 chunk 边界、stopped 与 error 传递。该测试针对 execution backport，并在配置时检查
-原生 execution policy 对象。llvm、zig、ASan 和 TSan lanes 没有这些对象，因此不注册
-该测试。显式 `const` shape 的 Forge bulk 探针也仅在配置时确认 bulk 可用后运行。
+原生 execution policy 对象。默认 libc++ 模式没有这些对象，因此不注册该模式的
+`forge_serial_bulk`；`llvm`、`tsan` 和 `asan` lanes 改为要求带
+`-fexperimental-library` 的 `forge_serial_bulk_experimental`，Zig 显式跳过（见下文
+“原生 execution policy 模式”）。该测试源文件不含条件编译，没有 `forge::bulk` 时无法编译，
+因此不会出现零用例通过。Forge bulk 可用时，configure 编译并链接显式 `const` shape 的
+direct 与 pipe 调用；不可用时分别验证三个名字均未声明，并用同组选项验证头文件仍可包含。
 
 ## Example smoke tests（示例冒烟）
 
@@ -833,8 +837,9 @@ Python 不变时 full 会重现相同结果，因此 C++ 单独变化的真正�
 
 其余依赖 backport 约束诊断、marker 或特定算术路径的测试及 configure probes，均要求
 实际 backport 注入：`FORGE_FORCE_LINALG_BACKPORT`，或 `FORGE_LINALG_FULL` 与
-`FORGE_LINALG_PARTIAL` 同时为假。原生 full/partial 让位时不注册这些测试，也不探测 policy
-variant；configure 明示跳过。该组包括既有 auxiliary / level1/2/3、proxy、布局/性能回归、
+`FORGE_LINALG_PARTIAL` 同时为假。原生 full/partial 让位时不注册这些测试，configure 明示
+跳过；原生 policy 模式的探测由 execution、linalg 和 Forge 测试共用，与 linalg 是否注入无关。
+该组包括既有 auxiliary / level1/2/3、proxy、布局/性能回归、
 静态约束与 packed negative probes，以及新增：
 
 - `linalg_draft_surface_compile`：用正向草案调用对照，检查旧重载和较宽类型域已移除；
@@ -851,17 +856,11 @@ variant；configure 明示跳过。该组包括既有 auxiliary / level1/2/3、p
   `<linalg>` 前后包含 `<execution>`，检查可用性一致、78 个返回类型、policy value
   category 和 policy 类型约束。
 
-上述注入 gate 内，configure 检查原生 policy 对象后才注册 `linalg_execution_policy`，覆盖每个标准
-policy 的独立结果、调用线程行为和异常 terminate（accessor 与算术异常，GoogleTest
-subprocess exit-code 检查）。`unseq` 要求 `__cpp_lib_execution >= 201902L`。
-没有 policy 对象时 configure 明示原因，并注册可见的 skipped
-`linalg_execution_policy_unavailable`；没有 death-test 支持的平台仅跳过 terminate cases。
-TBB 可用时由 linalg helpers 链接。
-
-libc++ 默认缺少 policy 对象时，CMake 另探测 per-target `-fexperimental-library`
-能否编译并链接 policy；成功才增加 `linalg_execution_policy_experimental` 与
-`linalg_policy_selection_experimental_compile`，不修改 lane scripts 或 libc++ 私有宏。
-探测失败时 llvm / zig / macOS 仍检查无 policy 入口的路径，configure 说明 variant 缺失。
+上述注入 gate 内，`linalg_execution_policy` 覆盖每个可用标准 policy 的独立结果、调用线程
+行为和异常 terminate（accessor 与算术异常，GoogleTest subprocess exit-code 检查）。
+该源文件在没有 policy 重载时无法编译，只在有 policy 对象的模式中注册。默认模式没有
+policy 对象时 configure 明示原因，并注册可见的 `linalg_execution_policy_unavailable`
+skip。没有 death-test 支持的平台仅跳过 terminate cases。TBB 可用时由 linalg helpers 链接。
 
 完整 `scripts/verify-native.sh llvm`、`zig`、`gcc16` 运行新 linalg 组；`gcc16-slim`
 只配置，`gcc-exec`、`tsan`、`asan` 关闭 linalg。macOS 完整 lane 保留 linalg。
@@ -905,6 +904,100 @@ allocator 控制按 /28 检查有无 allocator 的 get-state prvalue/reference �
 inline scheduler 提供同步 value 对照。Channel 在启动 pending recv 后由另一线程发送，task 在
 final_suspend 完成，erased sender 覆盖同步与 pool 来源。两个 sanitizer lane 的
 `execution|forge` 选择器均包含此测试，两个 lane 均启用 Forge runtime 测试。
+
+### 原生 execution policy 模式
+
+库按翻译单元判定原生 policy 对象（`backport/forge_native_execution.hpp`）：
+
+| 原生标准库 | `FORGE_NATIVE_EXECUTION_POLICY_OBJECTS` | `FORGE_NATIVE_EXECUTION_POLICY_UNSEQ` |
+| --- | --- | --- |
+| libc++ 20 及以上 | C++17 起且 `_LIBCPP_HAS_EXPERIMENTAL_PSTL` 为真 | 前者成立且为 C++20 起 |
+| libc++ 17 至 19 | C++17 起且未定义 `_LIBCPP_HAS_NO_INCOMPLETE_PSTL` | 前者成立且为 C++20 起 |
+| libc++ 16 及更早 | 0（下限，不看 `_LIBCPP_HAS_PARALLEL_ALGORITHMS`） | 0 |
+| libstdc++、MSVC STL | `__cpp_lib_execution >= 201603L` | `__cpp_lib_execution >= 201902L` |
+| 没有原生 `<execution>` | 0 | 0 |
+
+libc++ 16 及更早一律报告 0：没有任何验证 lane 能使用这样的库，保守的结果只是不声明 policy
+重载。若这样的库启用了外置 PSTL，配置期的原生名字测量会与头文件判定不一致并报错，该组合
+不受支持。libc++ 17、18 和 20 及以上的条件取自各版本的头文件，尚未经任何 lane 运行
+（derived, not exercised）；经过运行的是 libc++ 19（`llvm`、`tsan`、`asan`）、Zig 自带的
+libc++ 和 Apple 的 libc++。
+
+测试在配置时独立测量同一件事（`test/NativePolicyTests.cmake`），分两种模式：
+
+- `DEFAULT`：构建本身的配置。
+- `EXPERIMENTAL`：仅 libc++，在专用测试目标的编译和链接上加 `-fexperimental-library`。
+
+每种模式先不带 shadow include root，直接包含系统 `<execution>`，逐个编译并链接
+`seq`、`par`、`par_unseq` 和 `unseq`（取地址并检查 `is_execution_policy_v`），再测
+`par` 是否可复制，并在 configure 输出一行
+`Forge: native execution policies (<mode>): objects=… unseq=… copyable=…`。前三个对象
+全部可链接才算有 policy 对象。随后 wrapper 探针 `native_policy_gate.cpp` 用同样的
+选项经 `<forge_native_execution.hpp>` 编译，要求两个宏与测量值相等，不相等即 configure
+失败。没有注入任何 backport 时不存在 wrapper，只有 Forge bulk 另行检查其 feature-test
+macro 回退规则。有 wrapper 时，同一个源文件还作为普通的默认模式目标
+`test_native_policy_gate` 参与构建（CTest `execution_native_policy_gate`），不论测量结果
+和所选测试组如何，因此只启用 Forge 测试的构建也有一个默认模式目标来发现不一致。
+
+测量值通过 `forge_policy_test_target(<target> DEFAULT|EXPERIMENTAL)` 交给各 policy
+测试目标，源文件包含 `native_policy_config.hpp`，在该目标的真实编译选项下再次断言头文件
+判定与测量值一致。依赖 policy 对象的运行期用例放在不含条件编译的源文件里
+（`test_execution_bulk_native_policy.cpp`、`test_forge_serial_bulk.cpp`、
+`test_linalg_execution_policy.cpp`），只在有对象的模式中注册，在其他模式下无法编译，
+所以已注册的测试不可能不含用例。这三个源文件的 CTest 通过
+`test/RunGoogleTestCases.cmake` 运行：忽略环境中继承的用例选择（`GTEST_FILTER`、分片变量
+等，并以 `--gtest_filter=*` 运行整个套件），保留进程退出状态，并要求 GoogleTest 自己的
+汇总行 `[  PASSED  ] N tests.` 完整出现且 N 至少为 1。直接运行可执行文件时，filter 和
+`--gtest_list_tests` 不受影响。
+
+支持范围：与 Forge 其他 configure 探针一样，测量只能看到编译器、`CMAKE_CXX_FLAGS` 和
+toolchain file。通过其他途径改变 policy 模式的选项（按配置区分的
+`CMAKE_CXX_FLAGS_<CONFIG>`、多配置生成器中各配置不同的模式、外层工程的
+`add_compile_options`）不在测试套件的支持范围内。这类配置不会被静默放过：
+`native_policy_config.hpp` 的 `static_assert` 会让不一致的测试目标构建失败，
+`test_execution_task_scheduler_bulk` 则因找不到 policy 名字而无法编译。库头文件本身按翻译
+单元判定，不受此限制。
+
+`EXPERIMENTAL` 模式可用时注册：
+
+- `execution_bulk_native_policy_experimental`：三个标准 bulk adaptor 对四种 policy 的
+  直接调用；
+- `execution_bulk_policy_constraints_experimental_compile`：同一组约束探针；
+- `forge_serial_bulk_experimental`：Forge 的 direct 与 pipe 形式；
+- `linalg_execution_policy_experimental`、`linalg_policy_selection_experimental_compile`、
+  `linalg_policy_include_order_experimental` 及其 `_compile`；默认模式没有 policy 对象时，
+  已有的 `linalg_draft_surface_compile` 目标也改用该选项，其源文件断言 policy 重载的有无
+  与该目标的模式一致。
+
+`EXPERIMENTAL` 模式要求四个对象全部可链接：只有三个 C++17 对象而没有 `unseq` 时该模式
+视为不可用（默认模式下这样的标准库仍照常支持）。模式可用时，不论是否开启下面的 lane 选项，
+configure 都按适用的测试组（execution backport 已注入、linalg backport 已注入且有
+mdspan）核对上述 CTest 均已注册，且对应目标的编译和链接选项确实带有
+`-fexperimental-library`。
+
+普通 libc++ 仍验证无 policy 的路径。`par` 不可复制的模式（libc++）另有 configure 探针：
+对三个标准 bulk CPO，直接调用必须编译并链接，pipe 形式必须被拒绝（[exec.adapt.obj]
+要求 decay-copy 绑定的实参）。policy 可复制的库（libstdc++、MSVC STL）由
+`execution_bulk_native_policy` 在运行期执行 pipe 形式，该源文件同时断言 `par` 的可复制性
+与测量值一致。
+
+Lane 断言通过两个 CMake 选项表达，默认关闭：
+
+- `FORGE_TEST_REQUIRE_NATIVE_POLICIES`：默认模式必须有全部四个对象。`gcc16`、`gcc-exec`
+  和 Windows 主配置开启。普通构建不作此要求，没有 `<execution>` 或只有三个 C++17 对象的
+  标准库照常配置。
+- `FORGE_TEST_REQUIRE_LIBCPP_EXPERIMENTAL_POLICIES`：`EXPERIMENTAL` 模式必须可用（四个
+  对象）。`llvm`、`tsan`、`asan` 和 macOS 脚本开启。
+
+受支持的 `EXPERIMENTAL` 配置就是 libc++ 文档中的实验模式：编译和链接都带
+`-fexperimental-library`，链接时带上 `libc++experimental`。`clang++` 会自行加入该库。
+未开启该选项的 libc++ 主机（例如 Zig lane）上该模式是可选的：四个对象在这一配置下无法
+链接时，configure 说明原因并注册可见的 `execution_policy_experimental_unavailable` skip。
+
+Zig 不提供 `libc++experimental`，因此该配置在 Zig 上不受支持，Zig lane 走这条 skip；测试在
+Zig 上显式链接该库，使“可用”在两种 driver 下含义相同。另外记录一个事实：`zig c++` 接受
+该选项，且不带该库时四个 policy 对象也能以纯头文件方式编译并链接。在 Zig 上以这种方式运行
+带选项的测试是一个可能的后续工作，目前没有运行过。
 
 ### Awaitable 与 sender 双向桥接
 
