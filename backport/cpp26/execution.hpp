@@ -72,9 +72,9 @@
 //     See "bulk" and "bulk_chunked, bulk_unchunked" in the ledger.
 //   - task_scheduler implements ordinary scheduling only. Its domain uses
 //     the serial bulk fallback until stage 2. No task feature macro is defined.
-//   - task is staged. The promise environment answers only
-//     get_start_scheduler: no allocator or stop token query and no
-//     forwarding yet. See "task, with_error".
+//   - task is staged: the promise environment has no stop token query, and
+//     sender awaits and the class surface are not yet qualified. See
+//     "task, with_error".
 //
 // DEVIATIONS from current working draft [exec]:
 // Entries below refer to docs/roadmap/execution-conformance-ledger.md.
@@ -110,6 +110,8 @@
 //   - co_yield with_error stages its payload with one extra move, rejects an
 //     immovable payload, and routes a conversion failure after the frame is
 //     destroyed to the exception_ptr channel or to terminate. See the F notes.
+//   - ST-06: a reference start_scheduler_type for task is rejected, which
+//     is stricter than the draft. See the G2 notes.
 //
 // Missing standard facilities are listed in the ledger's coverage matrix.
 

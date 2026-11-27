@@ -52,9 +52,10 @@
 // Frame allocation ([task.promise]/13 to /19) is in
 // detail/task_frame_allocation.hpp.
 //
-// Staged and absent here:
-//   - the promise environment beyond get_start_scheduler, the allocator arms
-//     of the start scheduler selection and the stop token adapter.
+// The operation's environments, the start scheduler selection and the
+// promise environment of [task.promise]/12 are here. The stop token of
+// [task.state]/7 is not answered yet.
+//
 // Sender awaits and the class surface are present but not yet qualified.
 // No feature macro is defined.
 
@@ -310,33 +311,184 @@ Env __make_environment(Own& __own, Rcvr& __rcvr) {
     }
 }
 
+// [task.state]/4. ev is the object get_env(rcvr), named as an lvalue.
 template<class Ev>
-concept __has_start_scheduler = requires(const Ev& __ev) { std::execution::get_start_scheduler(__ev); };
+concept __has_start_scheduler = requires(Ev& __ev) { std::execution::get_start_scheduler(__ev); };
+
+template<class Ev>
+concept __has_scheduler_allocator = requires(Ev& __ev) { std::get_scheduler_allocator(__ev); };
 
 template<class Sch, class Ev>
-concept __exact_start_scheduler = __has_start_scheduler<Ev> &&
+concept __start_scheduler_is_exact = __has_start_scheduler<Ev> &&
     std::same_as<Sch, std::remove_cvref_t<decltype(
-        std::execution::get_start_scheduler(std::declval<const Ev&>()))>>;
+        std::execution::get_start_scheduler(std::declval<Ev&>()))>>;
 
 template<class Sch, class Ev>
-concept __start_scheduler_from_env = __has_start_scheduler<Ev> &&
-    requires(const Ev& __ev) { Sch(std::execution::get_start_scheduler(__ev)); };
+concept __start_scheduler_from_both = __has_start_scheduler<Ev> && __has_scheduler_allocator<Ev> &&
+    requires(Ev& __ev) {
+        Sch(std::execution::get_start_scheduler(__ev), std::get_scheduler_allocator(__ev));
+    };
 
-// Three of the five arms of [task.state]/4: the exact scheduler, a scheduler
-// constructed from it, or a default-constructed one. The two
-// get_scheduler_allocator arms are staged with the rest of the environment.
 template<class Sch, class Ev>
-Sch __select_start_scheduler(const Ev& __ev) {
-    if constexpr (__exact_start_scheduler<Sch, Ev>) {
-        return std::execution::get_start_scheduler(__ev);
-    } else if constexpr (__start_scheduler_from_env<Sch, Ev>) {
-        return Sch(std::execution::get_start_scheduler(__ev));
+concept __start_scheduler_from_scheduler = __has_start_scheduler<Ev> &&
+    requires(Ev& __ev) { Sch(std::execution::get_start_scheduler(__ev)); };
+
+template<class Sch, class Ev>
+concept __start_scheduler_from_allocator = __has_scheduler_allocator<Ev> &&
+    requires(Ev& __ev) { Sch(std::get_scheduler_allocator(__ev)); };
+
+// The first viable of the five initializers, in the draft's order. Only the
+// operands of the selected one are evaluated, and a selected construction
+// that throws does not fall through to a later one.
+enum class __start_arm { __is_exact, __from_both, __from_scheduler, __from_allocator, __from_nothing };
+
+template<class Sch, class Ev>
+consteval __start_arm __start_arm_of() {
+    if constexpr (__start_scheduler_is_exact<Sch, Ev>) {
+        return __start_arm::__is_exact;
+    } else if constexpr (__start_scheduler_from_both<Sch, Ev>) {
+        return __start_arm::__from_both;
+    } else if constexpr (__start_scheduler_from_scheduler<Sch, Ev>) {
+        return __start_arm::__from_scheduler;
+    } else if constexpr (__start_scheduler_from_allocator<Sch, Ev>) {
+        return __start_arm::__from_allocator;
     } else {
-        static_assert(__value_initializable<Sch>,
-                      "task: no start scheduler for this receiver environment");
-        return Sch();
+        return __start_arm::__from_nothing;
     }
 }
+
+// An object of the operation initialized from the result of a call: a
+// prvalue is materialized here without a copy or move, and a reference stays
+// that reference.
+template<class T>
+struct __retained {
+    T __value;
+
+    template<class Make>
+    explicit __retained(Make&& __make) : __value(std::forward<Make>(__make)()) {}
+};
+
+// [task.state]/4 and /6. ev is the object get_env(rcvr). The operation keeps
+// it for the forms that query it, after the frame and after SCHED and for as
+// long as the operation, so an answer that refers into the environment stays
+// valid. A prvalue answer is not kept: it initializes the constructor's
+// parameter directly, as in the draft's expression. Each selected operand is
+// evaluated once. S() queries nothing and keeps nothing.
+template<class Rcvr>
+struct __retained_ev {
+    using __ev_expr_t = decltype(std::execution::get_env(std::declval<Rcvr&>()));
+    using __ev_t = std::remove_reference_t<__ev_expr_t>;
+
+    std::optional<__retained<__ev_expr_t>> __storage;
+
+    __ev_t& __materialize(Rcvr& __rcvr) {
+        __storage.emplace([&__rcvr]() -> __ev_expr_t { return std::execution::get_env(__rcvr); });
+        return __storage->__value;
+    }
+};
+
+// The selected expression yields a scheduler object, which initializes SCHED
+// in the operation. start_scheduler_type must be an object type (see the
+// class). SCHED itself has that type with its cv-qualification, so a copy
+// made from it sees the same qualification as a copy from the alias would.
+template<class Sch>
+using __sched_object_t = std::remove_cv_t<Sch>;
+
+template<class Sch, class Rcvr,
+         __start_arm = __start_arm_of<Sch, typename __retained_ev<Rcvr>::__ev_t>()>
+struct __start_operands {
+    __sched_object_t<Sch> __select(Rcvr&) {
+        static_assert(__value_initializable<Sch>,
+                      "task: no start scheduler can be made for this receiver environment");
+        return Sch();
+    }
+};
+
+template<class Sch, class Rcvr>
+struct __start_operands<Sch, Rcvr, __start_arm::__is_exact> {
+    __retained_ev<Rcvr> __ev_;
+
+    __sched_object_t<Sch> __select(Rcvr& __rcvr) {
+        auto& __ev = __ev_.__materialize(__rcvr);
+        return std::execution::get_start_scheduler(__ev);
+    }
+};
+
+template<class Sch, class Rcvr>
+struct __start_operands<Sch, Rcvr, __start_arm::__from_both> {
+    __retained_ev<Rcvr> __ev_;
+
+    __sched_object_t<Sch> __select(Rcvr& __rcvr) {
+        auto& __ev = __ev_.__materialize(__rcvr);
+        return Sch(std::execution::get_start_scheduler(__ev), std::get_scheduler_allocator(__ev));
+    }
+};
+
+template<class Sch, class Rcvr>
+struct __start_operands<Sch, Rcvr, __start_arm::__from_scheduler> {
+    __retained_ev<Rcvr> __ev_;
+
+    __sched_object_t<Sch> __select(Rcvr& __rcvr) {
+        auto& __ev = __ev_.__materialize(__rcvr);
+        return Sch(std::execution::get_start_scheduler(__ev));
+    }
+};
+
+template<class Sch, class Rcvr>
+struct __start_operands<Sch, Rcvr, __start_arm::__from_allocator> {
+    __retained_ev<Rcvr> __ev_;
+
+    __sched_object_t<Sch> __select(Rcvr& __rcvr) {
+        auto& __ev = __ev_.__materialize(__rcvr);
+        return Sch(std::get_scheduler_allocator(__ev));
+    }
+};
+
+// [task.promise]/12, second item, and the Mandate of [task.members]/5.
+template<class Alloc, class Rcvr>
+concept __allocator_from_receiver = requires(Rcvr& __rcvr) {
+    Alloc(std::get_allocator(std::execution::get_env(__rcvr)));
+};
+
+template<class Alloc, class Rcvr>
+Alloc __receiver_allocator(Rcvr& __rcvr) noexcept {
+    if constexpr (__allocator_from_receiver<Alloc, Rcvr>) {
+        return Alloc(std::get_allocator(std::execution::get_env(__rcvr)));
+    } else {
+        return Alloc();
+    }
+}
+
+// [task.promise]/12, fourth item: any query other than the three reserved
+// ones goes to the Environment, with its arguments, if it is a forwarding
+// query and the Environment answers it. The query keeps the type and category
+// it was supplied with, in the classification as in the call, as it does in
+// the forwarding views ([exec.fwd.env]).
+template<class Query>
+concept __reserved_query = std::same_as<Query, get_start_scheduler_t> ||
+    std::same_as<Query, std::get_allocator_t> || std::same_as<Query, std::get_stop_token_t>;
+
+template<class Env, class Query, class... Args>
+concept __environment_queryable = requires(Env& __environment, Query&& __query, Args&&... __args) {
+    __environment.query(static_cast<Query&&>(__query), static_cast<Args&&>(__args)...);
+};
+
+template<class Env, class Query, class... Args>
+concept __nothrow_environment_queryable = requires(Env& __environment, Query&& __query, Args&&... __args) {
+    { __environment.query(static_cast<Query&&>(__query), static_cast<Args&&>(__args)...) } noexcept;
+};
+
+// The classification inspects the query's class, so it comes last, and only
+// for a complete type: a query the Environment does not answer, or an opaque
+// one, is rejected before any class trait sees it.
+template<class Query>
+concept __complete_query = requires { sizeof(Query); };
+
+template<class Env, class Query, class... Args>
+concept __environment_answers = (!__reserved_query<std::remove_cvref_t<Query>>) &&
+    __environment_queryable<Env, Query, Args...> &&
+    __complete_query<std::remove_cvref_t<Query>> &&
+    __forge_env_detail::__qualified_fwd_env_query<Query>;
 
 } // namespace __forge_task
 
@@ -352,6 +504,13 @@ public:
     using sender_concept = sender_tag;
     using allocator_type = typename __forge_task::__allocator_of<Environment>::type;
     using start_scheduler_type = typename __forge_task::__start_scheduler_of<Environment>::type;
+    // A reference start_scheduler_type is not supported. Read literally,
+    // SCHED would be a reference initialized from the selected expression,
+    // which dangles for a prvalue answer, and no general test decides when
+    // keeping a reference is safe. This is stricter than the draft.
+    static_assert(!std::is_reference_v<start_scheduler_type>,
+                  "task<T, E>: E::start_scheduler_type must be an object type; a reference scheduler "
+                  "type is not supported by this backport");
     using stop_source_type = typename __forge_task::__stop_source_of<Environment>::type;
     using stop_token_type = decltype(std::declval<stop_source_type>().get_token());
     using error_types = typename __forge_task::__error_types_of<Environment>::type;
@@ -381,6 +540,8 @@ private:
         __state(std::coroutine_handle<promise_type> __handle, R&& __rr)
             : __core_t(__handle),
               __rcvr_(std::forward<R>(__rr)),
+              __start_(),
+              __sched_(),
               __own_env_(__forge_task::__make_own_env<__own_env_t>(__rcvr_)),
               __environment_(__forge_task::__make_environment<Environment>(__own_env_, __rcvr_)) {
             this->__outcome_ = std::addressof(__outcome_storage_);
@@ -394,14 +555,21 @@ private:
         void start() & noexcept {
             promise_type& __promise = this->__frame_.__get().promise();
             __promise.__core_ = this;
-            __promise.__scheduler_.emplace(
-                __forge_task::__select_start_scheduler<start_scheduler_type>(
-                    std::execution::get_env(__rcvr_)));
+            __promise.__state_ = this;
+            __promise.__allocator_of_ = &__query_allocator;
+            __promise.__environment_ = std::addressof(__environment_);
+            // SCHED is initialized by the selected expression itself, in the
+            // operation. The promise borrows it.
+            __sched_.emplace([this]() -> __forge_task::__sched_object_t<start_scheduler_type> {
+                return __start_.__select(__rcvr_);
+            });
+            __promise.__scheduler_ = std::addressof(__sched_->__value);
             // The operation may be gone when this returns.
             this->__resume();
         }
 
     private:
+        // The frame, and every child in it, is gone.
         void __deliver_result() noexcept override {
             __errors::__send(__rcvr_, __outcome_storage_);
         }
@@ -414,9 +582,21 @@ private:
             __errors::__send(__rcvr_, __index, __referent);
         }
 
+        // The promise does not know Rcvr. It reaches the query that depends
+        // on the receiver through this.
+        static allocator_type __query_allocator(void* __self) noexcept {
+            return __forge_task::__receiver_allocator<allocator_type>(static_cast<__state*>(__self)->__rcvr_);
+        }
+
         // Not [[no_unique_address]]: each environment is initialized from a
         // prvalue, which a potentially-overlapping member would have to copy.
         __rcvr_t __rcvr_;
+        // ev, kept until the operation ends.
+        __forge_task::__start_operands<start_scheduler_type, __rcvr_t> __start_;
+        // SCHED. It lives in the operation and not in the frame, so that it
+        // outlives the frame through the terminal's conversion of a yielded
+        // error, and it is destroyed before ev.
+        std::optional<__forge_task::__retained<start_scheduler_type>> __sched_;
         __own_env_t __own_env_;
         Environment __environment_;
         __forge_task::__outcome<T> __outcome_storage_;
@@ -438,6 +618,9 @@ public:
     // [task.members]/6: the task owns a frame.
     template<receiver Rcvr>
     __state<Rcvr> connect(Rcvr&& __rcvr) && {
+        static_assert(__forge_task::__allocator_from_receiver<allocator_type, std::remove_cvref_t<Rcvr>> ||
+                          __forge_task::__value_initializable<allocator_type>,
+                      "task: allocator_type needs get_allocator(get_env(rcvr)) or default construction");
         return __state<Rcvr>(__frame_.__release(), std::forward<Rcvr>(__rcvr));
     }
 
@@ -449,17 +632,42 @@ private:
 
 template<class T, class Environment>
 class task<T, Environment>::promise_type : public __forge_task::__promise_return<T, __core_t> {
+    // [task.promise]/12.
     struct __env_t {
         const promise_type* __promise_;
 
-        start_scheduler_type query(get_start_scheduler_t) const noexcept {
-            return *__promise_->__scheduler_;
+        // The reserved queries, for exactly these tag types. A type that only
+        // converts to one of them is not that query. The stop token query is
+        // reserved too and has no answer yet.
+        template<class Query>
+            requires std::same_as<std::remove_cvref_t<Query>, get_start_scheduler_t>
+        start_scheduler_type query(Query&&) const noexcept {
+            return start_scheduler_type(*__promise_->__scheduler_);
+        }
+
+        template<class Query>
+            requires std::same_as<std::remove_cvref_t<Query>, std::get_allocator_t>
+        allocator_type query(Query&&) const noexcept {
+            return __promise_->__allocator_of_(__promise_->__state_);
+        }
+
+        template<class Query, class... Args>
+            requires __forge_task::__environment_answers<Environment, Query, Args...>
+        decltype(auto) query(Query&& __query, Args&&... __args) const
+            noexcept(__forge_task::__nothrow_environment_queryable<Environment, Query, Args...>) {
+            return __promise_->__environment_->query(static_cast<Query&&>(__query),
+                                                     static_cast<Args&&>(__args)...);
         }
     };
 
 public:
-    // SCHED(*this), set by start() before the body first runs.
-    std::optional<start_scheduler_type> __scheduler_;
+    // SCHED(*this), the scheduler object in the connected operation. Set by
+    // start() before the body first runs.
+    const start_scheduler_type* __scheduler_ = nullptr;
+    // The connected operation and its receiver-dependent query.
+    void* __state_ = nullptr;
+    allocator_type (*__allocator_of_)(void*) noexcept = nullptr;
+    Environment* __environment_ = nullptr;
 
     task get_return_object() noexcept {
         return task(std::coroutine_handle<promise_type>::from_promise(*this));
