@@ -517,12 +517,31 @@ concept stoppable_token =
         { token.stop_possible() } noexcept -> std::same_as<bool>;
     };
 
+// Clang 19 rejects the draft's P2280-dependent requirement at definition time.
+// Enable it only for the compiler families and versions selected by ST17.
+// Front ends that also advertise the GNU or MSVC macros are not measured.
+#if !defined(__NVCC__) && !defined(__CUDACC__) && !defined(__EDG__) && \
+    !defined(__INTEL_COMPILER) && !defined(__NVCOMPILER) && \
+    ((defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 16) || \
+     (defined(__clang__) && defined(__apple_build_version__) && __clang_major__ >= 21) || \
+     (defined(_MSC_VER) && !defined(__clang__) && _MSC_VER >= 1952))
+#define __FORGE_STOP_TOKEN_USE_DRAFT_REQUIREMENT 1
+#endif
+
 template<class Token>
 concept unstoppable_token =
     stoppable_token<Token> &&
-    requires {
+    (requires {
         requires std::bool_constant<(!Token::stop_possible())>::value;
-    };
+    }
+#if defined(__FORGE_STOP_TOKEN_USE_DRAFT_REQUIREMENT)
+    || requires(const Token token) {
+        requires std::bool_constant<(!token.stop_possible())>::value;
+    }
+#endif
+    );
+
+#undef __FORGE_STOP_TOKEN_USE_DRAFT_REQUIREMENT
 
 #endif // !__cpp_lib_inplace_stop_token
 

@@ -136,6 +136,13 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   会等待 invocation 返回。source 必须活过全部注册和 `request_stop()`，包括 callback
   返回后的 source 访问。协议见
   [`inplace-stop-callback-design.md`](../roadmap/inplace-stop-callback-design.md)。
+- `std::unstoppable_token` 保留对静态 `constexpr stop_possible()` 返回 `false` 的判断，
+  并在 GCC ≥ 16、AppleClang ≥ 21 和 MSVC ≥ 19.52（不含 clang-cl）上启用实测通过的
+  [`[stoptoken.concepts]`](https://eel.is/c++draft/stoptoken.concepts#4) 草案判断。它在未知的
+  const token 上测试 `stop_possible()`，也接受不读取对象状态、恒为 `false` 的非静态
+  `constexpr` observer。Clang 19 会在定义处报错，因此它和未经验证的编译器只使用静态判断；同样宣称 GNU 或 MSVC 宏的其他前端（NVCC、EDG 系、Intel classic、NVHPC）也按未验证处理。
+  不会用默认构造的 token 推断类型是否可停止。标准库提供
+  `__cpp_lib_inplace_stop_token >= 202400L` 时，使用其原生 concept。proxy 内部的分类仍只使用静态判断。
 - Library-provided sender 的 `connect_t` 提供 rvalue 移动路径和要求 sender 可复制的 lvalue 路径。
   `then`、`upon_*`、bulk、`into_variant`、`write_env` 与 `schedule_from` 的 const-lvalue
   连接直接将 child 作为 const lvalue 连接，不预先复制整个 child；data 按对应类别构造，

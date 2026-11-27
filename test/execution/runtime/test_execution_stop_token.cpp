@@ -38,6 +38,53 @@ struct rvalue_stop_callback {
     void operator()() && noexcept { ++*calls; }
 };
 
+struct static_unstoppable_token {
+    template<class Callback>
+    struct callback_type {
+        template<class Initializer>
+        explicit callback_type(const static_unstoppable_token&, Initializer&&) noexcept {}
+    };
+
+    static constexpr bool stop_requested() noexcept { return false; }
+    static constexpr bool stop_possible() noexcept { return false; }
+    bool operator==(const static_unstoppable_token&) const noexcept = default;
+};
+
+struct nonstatic_constexpr_false_token : static_unstoppable_token {
+    explicit constexpr nonstatic_constexpr_false_token(int) noexcept {}
+    constexpr bool stop_possible() const noexcept { return false; }
+};
+
+struct nonstatic_constexpr_true_token : static_unstoppable_token {
+    constexpr bool stop_possible() const noexcept { return true; }
+};
+
+struct static_constexpr_true_token : static_unstoppable_token {
+    static constexpr bool stop_possible() noexcept { return true; }
+};
+
+struct nonstatic_runtime_token : static_unstoppable_token {
+    bool stop_possible() const noexcept { return false; }
+};
+
+struct static_runtime_token : static_unstoppable_token {
+    static bool stop_possible() noexcept { return false; }
+};
+
+struct stateful_stop_token {
+    const std::inplace_stop_source* source = nullptr;
+
+    template<class Callback>
+    using callback_type = std::inplace_stop_callback<Callback>;
+
+    constexpr bool stop_possible() const noexcept { return source != nullptr; }
+    bool stop_requested() const noexcept { return source && source->stop_requested(); }
+    operator std::inplace_stop_token() const noexcept {
+        return source ? source->get_token() : std::inplace_stop_token{};
+    }
+    bool operator==(const stateful_stop_token&) const noexcept = default;
+};
+
 } // namespace
 
 TEST(ExecutionStopTokenTest, InplaceStopCallbackIsInvoked) {
@@ -277,6 +324,35 @@ static_assert(std::unstoppable_token<std::never_stop_token>,
               "never_stop_token must satisfy unstoppable_token");
 static_assert(!std::unstoppable_token<std::inplace_stop_token>,
               "inplace_stop_token must NOT satisfy unstoppable_token");
+
+static_assert(std::stoppable_token<static_unstoppable_token>);
+static_assert(std::stoppable_token<nonstatic_constexpr_false_token>);
+static_assert(std::stoppable_token<nonstatic_constexpr_true_token>);
+static_assert(std::stoppable_token<static_constexpr_true_token>);
+static_assert(std::stoppable_token<nonstatic_runtime_token>);
+static_assert(std::stoppable_token<static_runtime_token>);
+static_assert(std::stoppable_token<stateful_stop_token>);
+
+static_assert(std::unstoppable_token<static_unstoppable_token>);
+// Check the owner-measured compiler policy without using the header's switch.
+// A native concept is the library's own; only the backport's policy is pinned.
+#if !defined(__cpp_lib_inplace_stop_token) || (__cpp_lib_inplace_stop_token < 202400L)
+#if !defined(__NVCC__) && !defined(__CUDACC__) && !defined(__EDG__) && \
+    !defined(__INTEL_COMPILER) && !defined(__NVCOMPILER) && \
+    ((defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 16) || \
+     (defined(__clang__) && defined(__apple_build_version__) && __clang_major__ >= 21) || \
+     (defined(_MSC_VER) && !defined(__clang__) && _MSC_VER >= 1952))
+static_assert(std::unstoppable_token<nonstatic_constexpr_false_token>);
+#else
+static_assert(!std::unstoppable_token<nonstatic_constexpr_false_token>);
+#endif
+#endif
+static_assert(!std::unstoppable_token<nonstatic_constexpr_true_token>);
+static_assert(!std::unstoppable_token<static_constexpr_true_token>);
+static_assert(!std::unstoppable_token<nonstatic_runtime_token>);
+static_assert(!std::unstoppable_token<static_runtime_token>);
+// The default token has no source, but a token with a source can stop.
+static_assert(!std::unstoppable_token<stateful_stop_token>);
 
 static_assert(!std::stoppable_token<int>,
               "int must not satisfy stoppable_token");

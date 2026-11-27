@@ -1,8 +1,8 @@
 {
-  "assessment": "The callback-eligibility concept retains every constraint under a reserved name outside the feature guard. The optional standard header provides native declarations before the guard and lets older libraries use the fallback. The backport source lock, wait/notify, callback lifetime and memory-order operations in the modeled protocol are identical.",
+  "assessment": "Owner fix after the ST17 round-2 review. The preprocessor selection of the draft unstoppable_token requirement now also excludes unmeasured front ends that advertise the GNU or MSVC macros (__NVCC__, __CUDACC__, __EDG__, __INTEL_COMPILER, __NVCOMPILER). It changes only which compilers see a compile-time concept disjunct. No source-lock, waiter, callback or completion operation changes, so the protocol model is unaffected and the quick tier applies (README: a C++ change that needs no model change).",
   "checker_digest": "d498aee57dfaf2618d1656e6988a53155d682c074226653b0c56427e4556d8f6",
   "configuration_count": 99,
-  "date": "2026-11-19",
+  "date": "2026-11-27",
   "expected_digest": "e92bf194a3d57275cd1fcd9d7b9afcb2db1753493a907bf4131a26011218accd",
   "last_full_qualification": {
     "assessment": "Engine-only change: two narrow matcher forms (a parenthesized unary concept fold and a nonempty-pack sizeof constraint) and optional single-input support in the shared child-operation module. The stop_token model, its transitions, memory orders, library assumptions and fragments are unchanged; the complete stop_token.hpp analysis and every step resolution are identical to the prior matcher.",
@@ -25,7 +25,7 @@
   },
   "python": "3.13.13",
   "source": "backport/cpp26/execution/stop_token.hpp",
-  "source_digest": "69255793c2cc6be194354574773f45544e1a5ff6aa26be4c799757c02bcc743b",
+  "source_digest": "9aff554cc577d82006f9e57484e78f5954810ac297db76b37af149150c612c42",
   "source_digest_mode": "sha256-crlf-to-lf-bytes-v4",
   "tier": "quick"
 }
