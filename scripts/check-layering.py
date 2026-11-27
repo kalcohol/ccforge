@@ -62,7 +62,7 @@ STD = re.compile(r"\bstd\s*::")
 QUALIFIER = re.compile(r"\s*(?:template\s+)?(\w+)\s*")
 TEMPLATE_MARK = re.compile(r"[<>(){}\[\];]")
 OTHER_PRIVATE = re.compile(r"\bnamespace\s+\w+\s*=\s*(?:::\s*)?std\b|\w*__forge_\w*")
-SAL = re.compile(r"\b(?:__nothrow|__callback|__in|__out|__inout|__range|__success|__checkReturn|__fallthrough|__notnull|__format_string|__reserved|__deref|__ecount|__bcount|__override|__allocator)\b")
+SAL = re.compile(r"\b(?:__nothrow|__callback|__in|__out|__inout|__range|__success|__checkReturn|__fallthrough|__notnull|__format_string|__reserved|__deref|__ecount|__bcount|__override|__allocator|__valid|__block)\b")
 
 
 def is_forge(path):
@@ -287,6 +287,11 @@ def self_test():
         expect("backport/new.hpp", "int x = 1'000 + __in + 2'000; int __in_more; // __out\n"
                'char s[] = "__out";', 4)
         expect("include/forge/new.hpp", "int __allocator;", 4)
+        # __valid is a SAL macro and __block a keyword of Apple's Blocks extension.
+        expect("backport/new.hpp", "bool __valid = true; bool __valid_list; // __valid\n", 4)
+        expect("backport/new.hpp", "void f(void* __block); int __block_size; // __block\n", 4)
+        expect("include/forge/new.hpp", "int __valid; int __block;", 4, 4)
+        expect("backport/new.hpp", "bool __validated; int __blocks; int x__valid;")
         expect("test/new.cmake", "Check_CXX_Source_Compiles (x Y)\ncheck_cxx_source_runs\n(x Z)", 5, 5)
         expect("example/CMakeLists.txt", "check_cxx_source_runs(x Y)", 5)
         expect("test/forge/new.cmake", "check_cxx_source_compiles(x Y)")

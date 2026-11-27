@@ -43,13 +43,16 @@
 #include <version>
 #endif
 
+#include "detail/task_frame_allocation.hpp"
 #include "detail/task_terminal.hpp"
 
 // std::execution::task: frame ownership and terminal delivery ([task.class],
 // [task.members], [task.state], [task.promise]).
 //
+// Frame allocation ([task.promise]/13 to /19) is in
+// detail/task_frame_allocation.hpp.
+//
 // Staged and absent here:
-//   - allocator-aware frame allocation (operator new and delete);
 //   - the promise environment beyond get_start_scheduler, the allocator arms
 //     of the start scheduler selection and the stop token adapter.
 // Sender awaits and the class surface are present but not yet qualified.
@@ -515,6 +518,28 @@ public:
 
     auto get_env() const noexcept -> __env_t {
         return {this};
+    }
+
+    // [task.promise]/13: the default frame uses allocator_type().
+    void* operator new(std::size_t __size) {
+        return operator new(__size, std::allocator_arg, allocator_type());
+    }
+
+    // [task.promise]/14 to /17: a leading allocator_arg and allocator, after
+    // the implicit object parameter for a member coroutine.
+    template<class Alloc, class... Args>
+    void* operator new(std::size_t __size, std::allocator_arg_t, Alloc __alloc, Args&&...) {
+        return __forge_task::__allocate_frame(__size, __alloc);
+    }
+
+    template<class This, class Alloc, class... Args>
+    void* operator new(std::size_t __size, const This&, std::allocator_arg_t, Alloc __alloc, Args&&...) {
+        return __forge_task::__allocate_frame(__size, __alloc);
+    }
+
+    // [task.promise]/18 and /19.
+    void operator delete(void* __pointer, std::size_t __size) noexcept {
+        __forge_task::__deallocate_frame(__pointer, __size);
     }
 };
 

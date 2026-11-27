@@ -99,8 +99,9 @@ Git 已跟踪以及未忽略的新文件。`include/forge/`、`test/forge/`、
    `test/probe_fingerprint/test_configuration_inputs.cmake` 和
    `test/submdspan/gate_fixture/CMakeLists.txt`。生产配置不受此规则约束，
    配置指纹仍以 `FORGE_INCLUDE_DIR` 为键。
-4. `backport/` 和 `include/forge/` 不得把 gate 的 MSVC SAL 禁用名称当作标识符，
-   例如 `__nothrow`、`__in`、`__out` 和 `__allocator`。此规则按完整标识符匹配。
+4. `backport/` 和 `include/forge/` 不得把 gate 的保留名称当作标识符：MSVC `<sal.h>`
+   定义为宏的名称，例如 `__nothrow`、`__in`、`__out`、`__allocator` 和 `__valid`，以及
+   Apple Blocks 扩展的关键字 `__block`。此规则按完整标识符匹配。
 5. 标准测试和示例的 CMake 探针通过 owner-aware helper 执行。
    `check_cxx_source_compiles` 和 `check_cxx_source_runs` 只允许在
    `test/TestOwner.cmake` 的指定函数中调用，字面的 `cmake_language(CALL ...)`
