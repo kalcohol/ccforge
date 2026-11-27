@@ -39,7 +39,7 @@ working-draft-shaped subset 的执行口径。它与更完整的
 | `start_detached` | 不是当前 WD `[exec]` surface。 | 已从 `<execution>` backport 移除；utility 行为由 `forge::start_detached` 承接。 | 标准路径使用 `spawn`；detach utility 保持在 `forge::`。 |
 | Non-copyable lvalue sender convenience | Native-shaped code 要求显式 `std::move(sndr)`。 | 标准形状 backport 路径对 non-copyable lvalue sender 要求显式 move；`forge::async_scope` 保留已文档化的 Forge-only convenience。 | 示例和测试显式写 `std::move`；不要在标准 adaptor 里恢复 destructive lvalue connect。 |
 | Domain dispatch | 完整递归 current-WD model。 | `connect` 先应用 sender completion-domain recursion，再应用 receiver start-domain recursion；非 default-domain 的 completion-signature query 会先重算 transformed sender。 | 保持 `connect` 和 completion-signature 测试，包括 rawless source sender 经 transform 获救的路径。 |
-| `task`, `task_scheduler`, `with_error` | 已进入 current working draft。 | 负责人已重开，按分阶段试点引入：`task_scheduler` 的普通调度（E1）与 `task` 的 frame 所有权和终止交付（F）已实现，尚未发布 `__cpp_lib_task`。 | frame allocator、promise 环境与 stop adapter、await 路径资格验证和 native handoff 属于后续批次；逐行状态见 [conformance ledger](execution-conformance-ledger.md#f-task-frame-and-terminal-notes)。 |
+| `task`, `task_scheduler`, `with_error` | 已进入 current working draft。 | 负责人已重开，按分阶段试点引入：`task_scheduler` 的普通调度（E1）、`task` 的 frame 所有权和终止交付（F）以及 frame 分配（G1）已实现，尚未发布 `__cpp_lib_task`。 | promise 环境与 stop adapter、await 路径资格验证和 native handoff 属于后续批次；逐行状态见 [conformance ledger](execution-conformance-ledger.md#f-task-frame-and-terminal-notes)。 |
 | `inplace_stop_callback` construction | Current WD 要求 callback storage 就地持有，并带条件 `noexcept`。 | 为保持已验证的 request-stop / deregistration / reentrant self-destroy 行为，当前 control block 会分配，构造也不是该条件 `noexcept`。 | 作为已接受 conformance deviation 保留；没有 correctness bug、consumer requirement 或完整 ownership proof 时不重写。 |
 
 ## 标准 surface 清理顺序

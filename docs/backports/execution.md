@@ -241,7 +241,7 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   `transform_env` 已不在当前 working draft surface，因此本 backport 不暴露该旧拼写。
 - `std::execution::task`、`task_scheduler` 和 `with_error` 按分阶段试点引入，尚未发布
   `__cpp_lib_task`。`task_scheduler` 的普通调度（E1）和 `task` 的 frame 所有权与终止
-  交付（F）已实现；frame allocator、promise 环境的 allocator / stop token 查询、start
+  交付（F）以及 frame 分配（G1）已实现；promise 环境的 allocator / stop token 查询、start
   scheduler 的 allocator 分支以及 await 路径的资格验证属于后续批次，逐行状态见
   [conformance ledger](../roadmap/execution-conformance-ledger.md#f-task-frame-and-terminal-notes)。
   `forge::task` 与 `forge::io::io_task` 是不同契约的 Forge extensions，与这组标准类型
