@@ -209,7 +209,9 @@ forge_windows_ssh_main() {
 
         FORGE_WINDOWS_CLEANUP_REMOTE_SOURCE="$(forge_remote_ps '
 $ErrorActionPreference = "Stop"
-$path = Join-Path ([IO.Path]::GetTempPath()) ("ccforge-local-source-" + [Guid]::NewGuid().ToString("N"))
+$parent = Join-Path ([IO.Path]::GetTempPath()) "ccforge-local-source"
+$null = New-Item -ItemType Directory -Force -Path $parent
+$path = Join-Path $parent ([Guid]::NewGuid().ToString("N"))
 $null = New-Item -ItemType Directory -Path $path
 [Console]::Out.Write($path)
 ' | tr -d '\r\n')"
