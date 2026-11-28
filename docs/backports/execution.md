@@ -261,8 +261,8 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   `transform_env` 已不在当前 working draft surface，因此本 backport 不暴露该旧拼写。
 - `std::execution::task`、`task_scheduler` 和 `with_error` 按分阶段试点引入，尚未发布
   `__cpp_lib_task`。`task_scheduler` 的普通调度（E1）和 `task` 的 frame 所有权与终止
-  交付（F）、frame 分配（G1）以及环境和 start scheduler 选择（G2）已实现；
-  promise 环境的 stop token 查询、await 路径与类表面的资格验证属于后续批次，逐行状态见
+  交付（F）、frame 分配（G1）以及环境、start scheduler 选择和 stop token（G2）已实现；
+  await 路径与类表面的资格验证属于后续批次，逐行状态见
   [conformance ledger](../roadmap/execution-conformance-ledger.md#f-task-frame-and-terminal-notes)。
   `forge::task` 与 `forge::io::io_task` 是不同契约的 Forge extensions，与这组标准类型
   相互独立。标准 `task` 有四条设计约束，它们来自草案本身（[P4007R3](https://wg21.link/P4007R3)
@@ -283,6 +283,35 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   理解，SCHED 会是由选中表达式初始化的引用，prvalue 结果时即悬垂，而何时可以安全地保留引用
   没有通用判据；因此 SCHED 始终是 `start_scheduler_type` 类型的对象，该类型必须是对象类型。
   保留对 prvalue 构造实参的引用的 scheduler 不在契约之内。
+  stop token 按草案字面比较 `get_stop_token(get_env(rcvr))` 的表达式类型（含引用）：类型完全
+  相同时直接返回 receiver 的 token，不创建任何对象。`prop` 以引用返回 token，因此即使 token
+  类型相同也算不匹配。不匹配时，上游类型满足 `unstoppable_token`（receiver 没有 stop token
+  查询即属此类）就静态判定为不可能 stop；否则在第一次查询时读取一次 receiver 的 token 并调用
+  一次 `stop_possible()`。结果为 true 时惰性创建一个 operation 持有的 source、签发一个 token
+  并注册一个转发 `request_stop` 的上游回调；之后每次查询返回同一个已提交答案的拷贝，用户
+  自定义 token 的拷贝由 L0 mutex 串行化。转发回调与 operation 共享的 source 单元在
+  `connect` 时用 `std::allocator` 分配，不论 token 是否被查询，`connect` 可能因此抛出
+  `bad_alloc`；source 本身在 `noexcept` 的查询内构造，source 构造函数、`get_token()` 或回调
+  构造函数在那里抛出会调用 `terminate`。转换要求 `stop_source_type()` 得到一个全新的可请求
+  状态：查询检查新 source 的两个 observer，不满足时调用 `terminate`；状态与其他 source 相互
+  独立是对自定义 source 的语义前提，observer 无法验证。尚未被上游选中的转发回调在任务完成
+  时被移除，不再调用。
+  上游不可能 stop 时依次取：receiver 自己的 token（类型恰为 task 的 token 类型时）、
+  `inplace_stop_token()`（task 的 token 类型为该类型时），然后依次检查候选并以 token 的两个
+  observer 实际验证：token 类型的默认值、`Src(nostopstate)`、`Src()`。第一个既不 possible
+  也未 requested 的候选即为答案；都没有时，使用 operation 自己构造的第一个 possible 且未
+  requested 的 source（已记录的偏差 ST-07.2）；没有任何可用候选时调用 `terminate`。从不伪造
+  请求。未被选中的候选先释放 token 再释放 source。
+  `stop_token_type` 必须是对象类型：右值 `get_token()` 返回引用的 source 被 `static_assert`
+  拒绝（比草案更严格的偏差）；以引用返回上游 token（如 `prop`）不受影响。
+  适用范围的五项收窄（负责人批准，标准 source/token 组合不受影响）：
+  - source 的左值与右值 `get_token()` 必须返回同一 token 类型，否则不匹配路径以
+    `static_assert` 拒绝（ST-07.3）；
+  - 需要应用自定义实参才能构造的 disengaged 表示不可达，不计入“可表示”（ST-07.4）；
+  - 类型派生自或可转换为 task token 类型的上游 token 不做转换（ST-07.4）；
+  - 作为 ST-07.2 答案的 engaged source 必须在其整个可观察生命周期内独立于其他 owner
+    （ST-07.5）；
+  - token 类型的默认值仅在其默认构造函数为 `noexcept` 时才是候选（ST-07.6）。
 - `connect` 的 awaitable fallback 保存 sender 与 receiver 到全局分配的 coroutine frame，
   operation 的 noexcept move 转移 handle 并清空源对象，析构仅销毁非空 frame，
   `start` 恢复 frame。此连接路径可能抛出分配或参数构造异常，
