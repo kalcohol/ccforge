@@ -187,6 +187,23 @@ else()
     message(FATAL_ERROR "The task reference-binding branch probe compiled for no branch")
 endif()
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_task_probe_defs}")
+
+# Held-out qualification (pilot J-01), compile half. The accepted siblings
+# share one translation unit. A *_CONTROLS form keeps the changed type and
+# leaves out only the rejected use, so the rejection is that of the use.
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_TASK_HELDOUT_CONTROL
+    test_execution_task_heldout_probes.cpp ON "The accepted held-out task forms must compile" OWNER STD)
+foreach(_case IN ITEMS A04_IMMOVABLE_CONTROLS A23_NO_INITIALIZER_CONTROLS)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_task_probe_defs} -DFORGE_HELDOUT_${_case}=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_TASK_HELDOUT_${_case}
+        test_execution_task_heldout_probes.cpp ON "The held-out control ${_case} must compile" OWNER STD)
+endforeach()
+foreach(_case IN ITEMS A04_IMMOVABLE A05_EXPLICIT_ONLY A05_TWO_TARGETS A23_NO_INITIALIZER A24_TEMPORARY)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_task_probe_defs} -DFORGE_HELDOUT_${_case}=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_TASK_HELDOUT_REJECT_${_case}
+        test_execution_task_heldout_probes.cpp OFF "task must reject the held-out form ${_case}" OWNER STD)
+endforeach()
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_task_probe_defs}")
 unset(_forge_task_probe_defs)
 unset(_case)
 
@@ -543,6 +560,15 @@ forge_add_execution_runtime_test(
     execution_task_integration OWNER STD)
 if(MSVC)
     target_compile_options(test_execution_task_integration PRIVATE /bigobj)
+endif()
+
+# Held-out qualification (pilot J-01), runtime and termination half.
+forge_add_execution_runtime_test(
+    test_execution_task_heldout
+    test_execution_task_heldout.cpp
+    execution_task_heldout OWNER STD)
+if(MSVC)
+    target_compile_options(test_execution_task_heldout PRIVATE /bigobj)
 endif()
 
 function(forge_detect_execution_task_scheduler_policy)
