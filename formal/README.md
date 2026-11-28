@@ -29,7 +29,7 @@ python3 -B formal/stop_token/check.py --steps
 | [associate](associate/README.md) | sender association 转移、conditional holder、receiver 自毁与 HB | 2026-11-16：601 配置 |
 | [spawn_future](spawn_future/README.md) | eager producer、single consumer、取消、shared ownership、allocator/association 顺序与 HB | 2026-11-16：1,666 配置 |
 | [counting_scope](counting_scope/README.md) | 两种 scope 的 join、scope stop、fused callback 生命周期、HB 与 committed delivery | 2026-11-16：455 配置 |
-| [proxy_stop_adapter](proxy_stop_adapter/README.md) | SPI 的单次惰性 stop 转发、并发查询、注销与 source pin | 2026-11-26：19 配置，两个 worker |
+| [proxy_stop_adapter](proxy_stop_adapter/README.md) | SPI 的单次惰性 stop 转发、并发查询、注销与 source pin | 2026-11-28：66 配置，两个 worker |
 | [task_frame](task_frame/README.md) | `std::execution::task` 的 frame 单一所有权、connect 失败、终止前销毁 frame、receiver 自毁与返回路径 | 2026-11-27：40 配置，四个 worker |
 | [stop_token](stop_token/README.md) | inplace_stop_source 锁、回调生命周期、completion wait/notify | 2026-11-16：7,577 配置 |
 

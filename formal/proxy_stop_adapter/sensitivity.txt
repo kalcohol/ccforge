@@ -1,7 +1,16 @@
 # Configuration                                  Required failing check
 lose_request.already_requested.2                 PA1
 duplicate_registration.request_race.2             PA2
+sequential_reconstruction.request_race.2         PA2
 no_source_pin.same_thread_cleanup.2              PA4
 publish_before_immediate_forward.already_requested.2 PA5
-publish_before_registration.request_race.2       PA5
+publish_before_registration.request_race.2       PA8
+reader_issues.request_race.2                     PA8
 terminal_before_cleanup.request_race.2           PA3
+engaged_where_representable.held_nostop_impossible_default.2 PA7
+fabricated_request.requested_default.2           PA7
+bypassed_fresh_check.stateless_default.2         PA7
+unserialized_copy.request_race.2                 PA9
+source_released_first.held_nostop_requested_default.2 PA10
+wrong_survivor.held_nostop_impossible_default.2  PA2
+early_termination.requested_default.2            PA8

@@ -43,6 +43,7 @@
 #include <version>
 #endif
 
+#include "detail/proxy_stop_adapter.hpp"
 #include "detail/task_frame_allocation.hpp"
 #include "detail/task_terminal.hpp"
 
@@ -52,9 +53,9 @@
 // Frame allocation ([task.promise]/13 to /19) is in
 // detail/task_frame_allocation.hpp.
 //
-// The operation's environments, the start scheduler selection and the
-// promise environment of [task.promise]/12 are here. The stop token of
-// [task.state]/7 is not answered yet.
+// The operation's environments, the start scheduler selection, the stop
+// token of [task.state]/7 and the promise environment of [task.promise]/12
+// are here. The stop translation uses detail/proxy_stop_adapter.hpp.
 //
 // Sender awaits and the class surface are present but not yet qualified.
 // No feature macro is defined.
@@ -490,6 +491,62 @@ concept __environment_answers = (!__reserved_query<std::remove_cvref_t<Query>>) 
     __complete_query<std::remove_cvref_t<Query>> &&
     __forge_env_detail::__qualified_fwd_env_query<Query>;
 
+// [task.state]/7. The stop token the receiver's environment gives, as the
+// expression get_stop_token(get_env(rcvr)) with rcvr the stored receiver.
+template<class Rcvr>
+using __upstream_token_expr_t =
+    decltype(std::get_stop_token(std::execution::get_env(std::declval<Rcvr&>())));
+
+template<class Rcvr>
+using __upstream_token_t = std::remove_cvref_t<__upstream_token_expr_t<Rcvr>>;
+
+// Exact as the draft compares: the type of the expression, references
+// included, against the token type of the task's stop source.
+template<class Source, class Rcvr>
+concept __stop_token_is_exact =
+    std::same_as<decltype(std::declval<Source>().get_token()), __upstream_token_expr_t<Rcvr>>;
+
+// A mismatched token that can never stop needs no state when the token type
+// of the task's source is the in-place token, whose value-initialized object
+// is the one disengaged value.
+template<class Source, class Rcvr>
+concept __stop_token_is_disengaged = (!__stop_token_is_exact<Source, Rcvr>) &&
+    std::unstoppable_token<__upstream_token_t<Rcvr>> &&
+    __forge_parsched_detail::__proxy_answers_without_source<Source>;
+
+struct __no_stop_adapter {
+    void __finish() noexcept {}
+};
+
+template<class Source, class Rcvr>
+struct __stop_adapter_of {
+    using type = __forge_parsched_detail::__proxy_stop_adapter<
+        __upstream_token_t<Rcvr>, __forge_parsched_detail::__no_proxy_stop_observer, Source,
+        std::unstoppable_token<__upstream_token_t<Rcvr>>>;
+};
+
+template<class Source, class Rcvr>
+    requires __stop_token_is_exact<Source, Rcvr> || __stop_token_is_disengaged<Source, Rcvr>
+struct __stop_adapter_of<Source, Rcvr> {
+    using type = __no_stop_adapter;
+};
+
+// Whether the translation reads the receiver's token at all: to sample a
+// token that may be able to stop, or to keep one of the task's own token
+// type as the answer. A statically unstoppable token of another type is not
+// read, and is not required to be copyable from the answered expression.
+template<class Source, class Rcvr>
+concept __stop_token_reads_receiver = (!std::unstoppable_token<__upstream_token_t<Rcvr>>) ||
+    std::same_as<__upstream_token_t<Rcvr>, __forge_parsched_detail::__proxy_issued_token_t<Source>>;
+
+// A token that can stop is translated through a callback of its own type.
+template<class Source, class Rcvr>
+concept __stop_token_forwards = std::unstoppable_token<__upstream_token_t<Rcvr>> ||
+    __forge_parsched_detail::__proxy_stoppable_callback<
+        __upstream_token_t<Rcvr>,
+        __forge_parsched_detail::__proxy_stop_forwarder<
+            __forge_parsched_detail::__no_proxy_stop_observer, Source>>;
+
 } // namespace __forge_task
 
 template<class T, class Environment>
@@ -513,6 +570,14 @@ public:
                   "type is not supported by this backport");
     using stop_source_type = typename __forge_task::__stop_source_of<Environment>::type;
     using stop_token_type = decltype(std::declval<stop_source_type>().get_token());
+    // stop_token_type must be an object type. A source whose rvalue
+    // get_token() returns a reference is not supported: the promise's query
+    // would have to return a reference with a live referent on every path.
+    // This is stricter than the draft. void is no token at all.
+    static_assert(std::is_object_v<stop_token_type>,
+                  "task<T, E>: stop_token_type must be an object type: E::stop_source_type must "
+                  "return its token by value from an rvalue source; a reference or void "
+                  "stop_token_type is not supported by this backport");
     using error_types = typename __forge_task::__error_types_of<Environment>::type;
 
     // [task.promise]
@@ -540,6 +605,7 @@ private:
         __state(std::coroutine_handle<promise_type> __handle, R&& __rr)
             : __core_t(__handle),
               __rcvr_(std::forward<R>(__rr)),
+              __stop_(),
               __start_(),
               __sched_(),
               __own_env_(__forge_task::__make_own_env<__own_env_t>(__rcvr_)),
@@ -557,6 +623,7 @@ private:
             __promise.__core_ = this;
             __promise.__state_ = this;
             __promise.__allocator_of_ = &__query_allocator;
+            __promise.__stop_token_of_ = &__query_stop_token;
             __promise.__environment_ = std::addressof(__environment_);
             // SCHED is initialized by the selected expression itself, in the
             // operation. The promise borrows it.
@@ -569,28 +636,69 @@ private:
         }
 
     private:
-        // The frame, and every child in it, is gone.
+        // Every terminal removes the upstream stop registration before the
+        // receiver is entered. The frame, and every child in it, is gone.
         void __deliver_result() noexcept override {
+            __stop_.__finish();
             __errors::__send(__rcvr_, __outcome_storage_);
         }
 
         void __deliver_stopped() noexcept override {
+            __stop_.__finish();
             __forge_task::__send_stopped(__rcvr_);
         }
 
         void __deliver_error(std::size_t __index, void* __referent) noexcept override {
+            __stop_.__finish();
             __errors::__send(__rcvr_, __index, __referent);
         }
 
-        // The promise does not know Rcvr. It reaches the query that depends
-        // on the receiver through this.
+        // The promise does not know Rcvr. It reaches the two queries that
+        // depend on the receiver through these.
         static allocator_type __query_allocator(void* __self) noexcept {
             return __forge_task::__receiver_allocator<allocator_type>(static_cast<__state*>(__self)->__rcvr_);
+        }
+
+        // [task.state]/7: get-stop-token.
+        static stop_token_type __query_stop_token(void* __self) noexcept {
+            __state& __this = *static_cast<__state*>(__self);
+            if constexpr (__forge_task::__stop_token_is_exact<stop_source_type, __rcvr_t>) {
+                return std::get_stop_token(std::execution::get_env(__this.__rcvr_));
+            } else {
+                // Every mismatch. D7 issues the token from the stored source
+                // as an lvalue, and stop_token_type is what an rvalue source
+                // gives. A source for which the two differ is not supported.
+                static_assert(std::same_as<std::remove_cvref_t<stop_token_type>,
+                                           __forge_parsched_detail::__proxy_issued_token_t<stop_source_type>>,
+                              "task: stop_source_type must give the same token type from an lvalue "
+                              "and from an rvalue source when the receiver's stop token is translated");
+                if constexpr (__forge_task::__stop_token_is_disengaged<stop_source_type, __rcvr_t>) {
+                    // No state: the in-place token's own disengaged value.
+                    return std::inplace_stop_token();
+                } else {
+                    static_assert(__forge_task::__stop_token_forwards<stop_source_type, __rcvr_t>,
+                                  "task: the receiver's stop token has no callback_type that accepts the "
+                                  "task's stop forwarder");
+                    // One answer, chosen at the first query and published
+                    // atomically to concurrent first queries.
+                    if constexpr (__forge_task::__stop_token_reads_receiver<stop_source_type, __rcvr_t>) {
+                        return __this.__stop_.__query([&__this]() noexcept {
+                            return __forge_task::__upstream_token_t<__rcvr_t>(
+                                std::get_stop_token(std::execution::get_env(__this.__rcvr_)));
+                        });
+                    } else {
+                        // The receiver's token is never read on this path,
+                        // so no copy of it is formed either.
+                        return __this.__stop_.__query(__forge_parsched_detail::__proxy_no_read{});
+                    }
+                }
+            }
         }
 
         // Not [[no_unique_address]]: each environment is initialized from a
         // prvalue, which a potentially-overlapping member would have to copy.
         __rcvr_t __rcvr_;
+        typename __forge_task::__stop_adapter_of<stop_source_type, __rcvr_t>::type __stop_;
         // ev, kept until the operation ends.
         __forge_task::__start_operands<start_scheduler_type, __rcvr_t> __start_;
         // SCHED. It lives in the operation and not in the frame, so that it
@@ -636,9 +744,8 @@ class task<T, Environment>::promise_type : public __forge_task::__promise_return
     struct __env_t {
         const promise_type* __promise_;
 
-        // The reserved queries, for exactly these tag types. A type that only
-        // converts to one of them is not that query. The stop token query is
-        // reserved too and has no answer yet.
+        // The three reserved queries, for exactly these tag types. A type
+        // that only converts to one of them is not that query.
         template<class Query>
             requires std::same_as<std::remove_cvref_t<Query>, get_start_scheduler_t>
         start_scheduler_type query(Query&&) const noexcept {
@@ -649,6 +756,12 @@ class task<T, Environment>::promise_type : public __forge_task::__promise_return
             requires std::same_as<std::remove_cvref_t<Query>, std::get_allocator_t>
         allocator_type query(Query&&) const noexcept {
             return __promise_->__allocator_of_(__promise_->__state_);
+        }
+
+        template<class Query>
+            requires std::same_as<std::remove_cvref_t<Query>, std::get_stop_token_t>
+        stop_token_type query(Query&&) const noexcept {
+            return __promise_->__stop_token_of_(__promise_->__state_);
         }
 
         template<class Query, class... Args>
@@ -664,9 +777,10 @@ public:
     // SCHED(*this), the scheduler object in the connected operation. Set by
     // start() before the body first runs.
     const start_scheduler_type* __scheduler_ = nullptr;
-    // The connected operation and its receiver-dependent query.
+    // The connected operation and its two receiver-dependent queries.
     void* __state_ = nullptr;
     allocator_type (*__allocator_of_)(void*) noexcept = nullptr;
+    stop_token_type (*__stop_token_of_)(void*) noexcept = nullptr;
     Environment* __environment_ = nullptr;
 
     task get_return_object() noexcept {

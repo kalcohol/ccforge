@@ -17,14 +17,29 @@ def sensitivity():
         case("request_race", control="terminal_before_cleanup"),
         case("request_race", control="publish_before_registration"),
         case("already_requested", control="publish_before_immediate_forward"),
+        case("held_nostop_impossible_default", control="engaged_where_representable"),
+        case("requested_default", control="fabricated_request"),
+        case("held_nostop_requested_default", control="source_released_first"),
+        case("held_nostop_impossible_default", control="wrong_survivor"),
+        case("requested_default", control="early_termination"),
+        case("request_race", control="reader_issues"),
+        case("request_race", control="unserialized_copy"),
+        case("request_race", control="sequential_reconstruction"),
+        case("stateless_default", control="bypassed_fresh_check"),
     ]
+
+
+QUICK = ("impossible", "impossible_sampled", "static_sampled", "impossible_token_default",
+         "impossible_nostop", "tag_only_engaged", "impossible_engaged", "held_nostop_impossible_default",
+         "held_nostop_requested_default", "requested_nostop_usable_default", "requested_default",
+         "stateless_default", "request_race", "cross_thread_cleanup", "same_thread_cleanup",
+         "loss_during_initialization")
 
 
 def select(tier):
     base = [case(name, 0 if name == "unused" else 2) for name in SCENARIOS]
     if tier == "quick":
-        return [t for t in base if t["scenario"] in
-                ("impossible", "request_race", "cross_thread_cleanup", "same_thread_cleanup")] + sensitivity()
+        return [t for t in base if t["scenario"] in QUICK] + sensitivity()
     return base + [case(name, 1) for name in SCENARIOS if name != "unused"] + sensitivity()
 
 
@@ -34,7 +49,8 @@ def identity(task):
 
 def configuration(task):
     name = task["scenario"]
-    fields = dict(possible=True, before=False, requests=1, timing="arbitrary",
+    fields = dict(possible=True, tokdef="inplace", nostop=None, default="eligible", same_type=False,
+                  static=False, loss=False, before=False, requests=1, timing="arbitrary",
                   completion="ordinary")
     fields.update(SCENARIOS[name])
     fields.update(identity(task), name=task["name"])
@@ -42,4 +58,5 @@ def configuration(task):
     if fields["queries"] < 2:
         required.discard("query.wait")
         required.discard("query.park")
+        required.discard("copy.wait")
     return SimpleNamespace(**fields, required=required)
