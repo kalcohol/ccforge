@@ -261,8 +261,9 @@ closure 的隐式转换参与 pipe。按 [`[exec.adapt.obj]/2`](https://eel.is/c
   `transform_env` 已不在当前 working draft surface，因此本 backport 不暴露该旧拼写。
 - `std::execution::task`、`task_scheduler` 和 `with_error` 按分阶段试点引入，尚未发布
   `__cpp_lib_task`。`task_scheduler` 的普通调度（E1）和 `task` 的 frame 所有权与终止
-  交付（F）、frame 分配（G1）以及环境、start scheduler 选择和 stop token（G2）已实现；
-  await 路径与类表面的资格验证属于后续批次，逐行状态见
+  交付（F）、frame 分配（G1）、环境、start scheduler 选择和 stop token（G2）以及类表面和
+  await 路径（H1）已实现。await 路径只对封闭的十个单层操作数完成了资格验证，其他组合不在
+  第一阶段的验证范围内；逐行状态见
   [conformance ledger](../roadmap/execution-conformance-ledger.md#f-task-frame-and-terminal-notes)。
   `forge::task` 与 `forge::io::io_task` 是不同契约的 Forge extensions，与这组标准类型
   相互独立。标准 `task` 有四条设计约束，它们来自草案本身（[P4007R3](https://wg21.link/P4007R3)
