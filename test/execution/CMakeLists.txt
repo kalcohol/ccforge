@@ -107,10 +107,22 @@ unset(_case)
 set(_forge_task_probe_defs "${CMAKE_REQUIRED_DEFINITIONS}")
 forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_TASK_CONTROL
     test_execution_task_rejections.cpp ON "The accepted task coroutines must compile" OWNER STD)
-foreach(_case IN ITEMS TEMPORARY_REFERENCE NO_ERROR_TARGET AMBIGUOUS_ERROR_TARGET IMMOVABLE_ERROR CV_VOID)
+foreach(_case IN ITEMS TEMPORARY_REFERENCE NO_ERROR_TARGET AMBIGUOUS_ERROR_TARGET IMMOVABLE_ERROR CV_VOID
+        NON_SENDER_AWAIT)
     set(CMAKE_REQUIRED_DEFINITIONS ${_forge_task_probe_defs} -DFORGE_TASK_REJECT_${_case}=1)
     forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_TASK_REJECT_${_case}
         test_execution_task_rejections.cpp OFF "task must reject ${_case}" OWNER STD)
+endforeach()
+# [task.class]/1 to /4: one rejected and one accepted type for each of the
+# eight configuration classes. The accepted forms share one translation unit.
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_task_probe_defs}")
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_TASK_CONFIG_CONTROL
+    test_execution_task_configuration.cpp ON "The accepted task configurations must compile" OWNER STD)
+foreach(_case IN ITEMS CV_RESULT ARRAY_RESULT NONCLASS_ENVIRONMENT MALFORMED_ERROR_LIST NON_ERROR_SIGNATURE
+        START_SCHEDULER ALLOCATOR STOP_SOURCE)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_task_probe_defs} -DFORGE_TASK_CONFIG_REJECT_${_case}=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_TASK_CONFIG_REJECT_${_case}
+        test_execution_task_configuration.cpp OFF "task configuration must reject ${_case}" OWNER STD)
 endforeach()
 # The frame allocator's rebound pointer must be a pointer type.
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_task_probe_defs}")
@@ -523,6 +535,14 @@ forge_add_execution_runtime_test(
     execution_task_stop OWNER STD)
 if(MSVC)
     target_compile_options(test_execution_task_stop PRIVATE /bigobj)
+endif()
+
+forge_add_execution_runtime_test(
+    test_execution_task_integration
+    test_execution_task_integration.cpp
+    execution_task_integration OWNER STD)
+if(MSVC)
+    target_compile_options(test_execution_task_integration PRIVATE /bigobj)
 endif()
 
 function(forge_detect_execution_task_scheduler_policy)

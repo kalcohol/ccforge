@@ -86,6 +86,18 @@ using void_task = ex::task<void, inline_environment>;
 #endif
 static_assert(sizeof(void_task) > 0);
 
+// H1-04, [task.promise]/6: an await operand is a sender. An operand that is
+// neither a sender nor an awaitable is rejected.
+struct not_awaitable {};
+
+ex::task<void, inline_environment> awaits_an_operand() {
+#if defined(FORGE_TASK_REJECT_NON_SENDER_AWAIT)
+    co_await not_awaitable{};
+#else
+    co_await ex::just();
+#endif
+}
+
 struct receiver {
     using receiver_concept = ex::receiver_tag;
 
@@ -106,4 +118,5 @@ int main() {
     run(returns_const_reference());
     run(yields_narrow_error());
     run(yields_pinned_error());
+    run(awaits_an_operand());
 }
