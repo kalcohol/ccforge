@@ -81,9 +81,15 @@ struct receiver {
     record* result;
     Token token;
 
+    // Calls of the environment's stop token query, per receiver type.
+    static inline std::execution::__forge_sync::atomic<unsigned> stop_queries{0};
+
     struct environment {
         Token token;
-        Token query(std::get_stop_token_t) const noexcept { return token; }
+        Token query(std::get_stop_token_t) const noexcept {
+            ++stop_queries;
+            return token;
+        }
     };
     auto get_env() const noexcept {
         if constexpr (ByValueProp) return ex::prop{std::get_stop_token, token};
@@ -370,13 +376,19 @@ TEST(ParallelSchedulerReplacement, C03_ExactTranslatedAndImpossibleToken) {
     EXPECT_EQ(query(impossible), std::optional{inplace_stop_token{}});
     EXPECT_EQ(stats.registrations.load(), 0u);
 
-    // A non-static constexpr observer is checked at query time.
+    // A non-static constexpr observer is checked at query time: the proxy
+    // classifies with the static form only, on every toolchain, so the first
+    // query calls the receiver's stop token query exactly once and later
+    // queries do not call it.
     unsigned registrations = 0;
     using impossible_receiver = receiver<always_impossible_token>;
     fixture::ordinary_proxy<impossible_receiver> always_impossible{
         impossible_receiver{nullptr, {&registrations}}};
+    impossible_receiver::stop_queries = 0;
     EXPECT_EQ(query(always_impossible), std::optional{inplace_stop_token{}});
+    EXPECT_EQ(impossible_receiver::stop_queries, 1u);
     EXPECT_EQ(query(always_impossible), std::optional{inplace_stop_token{}});
+    EXPECT_EQ(impossible_receiver::stop_queries, 1u);
     EXPECT_EQ(registrations, 0u);
 
     fixture::ordinary_proxy<no_stop_receiver> never{no_stop_receiver{}};

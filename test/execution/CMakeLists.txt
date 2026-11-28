@@ -135,6 +135,21 @@ endforeach()
 set(CMAKE_REQUIRED_DEFINITIONS "${_forge_task_probe_defs}")
 unset(_case)
 
+# Translating a mismatched stop token that can stop needs a default
+# constructible source and a callback type that accepts the forwarder. Every
+# mismatch needs one token type from both source factories, and an upstream
+# that cannot stop needs at least one candidate answer.
+forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_TASK_STOP_CONTROL
+    test_execution_task_stop_rejections.cpp ON "The accepted task stop translation must compile" OWNER STD)
+foreach(_case IN ITEMS SOURCE CALLBACK FACTORIES NO_CANDIDATE THROWING_DEFAULT TOKEN_REFERENCE
+        TOKEN_VOID)
+    set(CMAKE_REQUIRED_DEFINITIONS ${_forge_task_probe_defs} -DFORGE_TASK_STOP_REJECT_${_case}=1)
+    forge_expect_execution_cxx_source_compiles(FORGE_EXECUTION_TASK_STOP_REJECT_${_case}
+        test_execution_task_stop_rejections.cpp OFF "task stop translation must reject ${_case}" OWNER STD)
+endforeach()
+set(CMAKE_REQUIRED_DEFINITIONS "${_forge_task_probe_defs}")
+unset(_case)
+
 # Record how this toolchain implements the optional<U&>::emplace constraint of
 # a reference result: 1 library trait, 2 compiler builtin, 0 the stricter
 # approximation. The first two are exact.
@@ -500,6 +515,14 @@ forge_add_execution_runtime_test(
     execution_task_environment OWNER STD)
 if(MSVC)
     target_compile_options(test_execution_task_environment PRIVATE /bigobj)
+endif()
+
+forge_add_execution_runtime_test(
+    test_execution_task_stop
+    test_execution_task_stop.cpp
+    execution_task_stop OWNER STD)
+if(MSVC)
+    target_compile_options(test_execution_task_stop PRIVATE /bigobj)
 endif()
 
 function(forge_detect_execution_task_scheduler_policy)
