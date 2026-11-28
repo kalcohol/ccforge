@@ -47,9 +47,7 @@
 //   Stop tokens      : inplace_stop_source/token/callback, never_stop_token,
 //                      stoppable_token concepts
 //   Coroutine bridge : as_awaitable, with_awaitable_senders (C++20 coroutines)
-//   Coroutine task   : task and with_error: frame ownership, terminal
-//                      delivery and frame allocation (see the staging
-//                      note below)
+//   Coroutine task   : task and with_error (stage 1; see the note below)
 //   Infra            : completion_signatures_of_t,
 //                      value_types_of_t, error_types_of_t, sends_stopped,
 //                      private per-adaptor signature transforms, enable_sender,
@@ -72,8 +70,9 @@
 //     See "bulk" and "bulk_chunked, bulk_unchunked" in the ledger.
 //   - task_scheduler implements ordinary scheduling only. Its domain uses
 //     the serial bulk fallback until stage 2. No task feature macro is defined.
-//   - task is staged: sender awaits and the class surface are not yet
-//     qualified. See "task, with_error".
+//   - task is qualified for its class surface and for a closed list of
+//     ten one-level await operands. Other compositions are not qualified.
+//     No task feature macro is defined. See "task, with_error".
 //
 // DEVIATIONS from current working draft [exec]:
 // Entries below refer to docs/roadmap/execution-conformance-ledger.md.

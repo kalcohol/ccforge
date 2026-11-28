@@ -57,8 +57,9 @@
 // token of [task.state]/7 and the promise environment of [task.promise]/12
 // are here. The stop translation uses detail/proxy_stop_adapter.hpp.
 //
-// Sender awaits and the class surface are present but not yet qualified.
-// No feature macro is defined.
+// The class surface and the await path of [task.promise]/6 are qualified
+// for the closed list of one-level operands in the conformance ledger. No
+// feature macro is defined.
 
 namespace std::execution {
 
@@ -117,6 +118,22 @@ template<__names_stop_source_type Env>
 struct __stop_source_of<Env> {
     using type = typename Env::stop_source_type;
 };
+
+// [task.class]/4: stop_source_type models stoppable-source
+// ([stoptoken.concepts]).
+template<class Source>
+concept __stoppable_source = requires(Source& __source, const Source& __const_source) {
+    { __const_source.get_token() } -> std::stoppable_token;
+    { __const_source.stop_possible() } noexcept -> std::same_as<bool>;
+    { __const_source.stop_requested() } noexcept -> std::same_as<bool>;
+    { __source.request_stop() } -> std::same_as<bool>;
+};
+
+// A type with members. Unlike a requirement on those members, this needs no
+// complete type, so the class can test it while a configured type is still
+// being defined in terms of the task.
+template<class Type>
+concept __class_or_union = std::is_class_v<Type> || std::is_union_v<Type>;
 
 template<class Env>
 struct __error_types_of {
@@ -555,11 +572,20 @@ class task {
                       (std::is_object_v<T> && !std::is_array_v<T> &&
                        std::same_as<T, std::remove_cv_t<T>>),
                   "task<T, E>: T must be void, a reference or a cv-unqualified non-array object type");
-    static_assert(std::is_class_v<Environment>, "task<T, E>: E must be a class type");
+    // [task.class]/1. A union is a class type ([class.pre]).
+    static_assert(__forge_task::__class_or_union<Environment>, "task<T, E>: E must be a class type");
 
 public:
     using sender_concept = sender_tag;
+    // [task.class]/4: the three configured types meet their requirements.
+    // The requirements themselves are checked by connect, where the task is
+    // complete: a configured type may be defined in terms of this task (a
+    // scheduler whose schedule sender owns one), and a requirement checked
+    // here would then need the class it is part of. The class checks only
+    // what needs no complete type.
     using allocator_type = typename __forge_task::__allocator_of<Environment>::type;
+    static_assert(__forge_task::__class_or_union<allocator_type>,
+                  "task<T, E>: allocator_type must be a class type that meets the Allocator requirements");
     using start_scheduler_type = typename __forge_task::__start_scheduler_of<Environment>::type;
     // A reference start_scheduler_type is not supported. Read literally,
     // SCHED would be a reference initialized from the selected expression,
@@ -568,6 +594,8 @@ public:
     static_assert(!std::is_reference_v<start_scheduler_type>,
                   "task<T, E>: E::start_scheduler_type must be an object type; a reference scheduler "
                   "type is not supported by this backport");
+    static_assert(__forge_task::__class_or_union<start_scheduler_type>,
+                  "task<T, E>: start_scheduler_type must be a class type that models scheduler");
     using stop_source_type = typename __forge_task::__stop_source_of<Environment>::type;
     using stop_token_type = decltype(std::declval<stop_source_type>().get_token());
     // stop_token_type must be an object type. A source whose rvalue
@@ -726,6 +754,12 @@ public:
     // [task.members]/6: the task owns a frame.
     template<receiver Rcvr>
     __state<Rcvr> connect(Rcvr&& __rcvr) && {
+        // [task.class]/4, checked here because the task is complete.
+        static_assert(__forge_env_detail::__simple_allocator<allocator_type>,
+                      "task<T, E>: allocator_type must meet the Allocator requirements");
+        static_assert(scheduler<start_scheduler_type>, "task<T, E>: start_scheduler_type must model scheduler");
+        static_assert(__forge_task::__stoppable_source<stop_source_type>,
+                      "task<T, E>: stop_source_type must model stoppable-source");
         static_assert(__forge_task::__allocator_from_receiver<allocator_type, std::remove_cvref_t<Rcvr>> ||
                           __forge_task::__value_initializable<allocator_type>,
                       "task: allocator_type needs get_allocator(get_env(rcvr)) or default construction");
